@@ -462,13 +462,23 @@ function parseDateFlexible_(v, tz) {
     return { y: +parts[0], m: +parts[1], d: +parts[2] };
   }
   const s = String(v || '').trim();
-  let m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+
+  // ── RESTORED: "Tue Nov 03 2026" format ──────────────────────────────────────
+  let m = s.match(/^(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s+(\w{3})\s+(\d{2})\s+(\d{4})$/i);
+  if (m) {
+    const months = { jan:1,feb:2,mar:3,apr:4,may:5,jun:6,jul:7,aug:8,sep:9,oct:10,nov:11,dec:12 };
+    return { y: +m[3], m: months[m[1].toLowerCase()] || 1, d: +m[2] };
+  }
+
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (m) return { y:+m[1], m:+m[2], d:+m[3] };
+
   m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
   if (m) {
     const yy = (+m[3] < 100) ? 2000 + (+m[3]) : +m[3];
     return { y: yy, m: +m[1], d: +m[2] };
   }
+
   const today = new Date();
   return { y: today.getFullYear(), m: today.getMonth()+1, d: today.getDate() };
 }
@@ -480,14 +490,18 @@ function parseTimeFlexible_(v, tz) {
   }
   if (typeof v === 'number' && isFinite(v)) {
     const totalMin = Math.round(v * 24 * 60);
-    const hh = Math.floor(totalMin / 60) % 24;
-    const mm = totalMin % 60;
-    return { hh, mm };
+    return { hh: Math.floor(totalMin / 60) % 24, mm: totalMin % 60 };
   }
+
   let s = String(v || '').trim();
   s = s.replace(/\u202F|\u00A0/g, ' ');
+
+  // ── RESTORED: strip trailing timezone suffix e.g. "ET", "EST", "EDT" ────────
+  s = s.replace(/\s+[A-Z]{2,4}$/, '').trim();
+
   let m = s.match(/^(\d{1,2}):(\d{2})$/);
   if (m) return { hh: +m[1], mm: +m[2] };
+
   m = s.match(/^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?$/);
   if (m) {
     let hh = +(m[1] || 0);
@@ -497,11 +511,13 @@ function parseTimeFlexible_(v, tz) {
     if (ap === 'AM' && hh === 12) hh = 0;
     return { hh, mm };
   }
+
   m = s.match(/^(\d{3,4})$/);
   if (m) {
     const digits = m[1].padStart(4, '0');
     return { hh: +digits.slice(0,2), mm: +digits.slice(2,4) };
   }
+
   return { hh: 8, mm: 0 };
 }
 
@@ -2303,14 +2319,18 @@ function buildMasterRows_(lbjRows, cfg) {
     const count = dedup.length;
     const docMode = (count <= 1) ? 'SINGLE' : 'TABLE';
 
-    const flat = {};
     dedup.slice(0, SETTINGS.MAX_ASSIGNMENTS).forEach((a, idx) => {
       const p = `A${idx+1}_`;
-      flat[p+'Date'] = a.date;
-      flat[p+'Start'] = a.start;
-      flat[p+'End'] = a.end;
+
+      const dateObj  = parseDateFlexible_(a.date, cfg.Calendar_Timezone);
+      const startObj = parseTimeFlexible_(a.start, cfg.Calendar_Timezone);
+      const endObj   = parseTimeFlexible_(a.end, cfg.Calendar_Timezone);
+
+      flat[p+'Date']         = formatAssignmentDate_(dateObj.y, dateObj.m, dateObj.d);
+      flat[p+'Start']        = formatAssignmentTime_(startObj.hh, startObj.mm);
+      flat[p+'End']          = a.end ? formatAssignmentTime_(endObj.hh, endObj.mm) : '';
       flat[p+'LocationName'] = a.locationName;
-      flat[p+'Address'] = a.address;
+      flat[p+'Address']      = a.address;
     });
 
     const canon = canonicalizeAssignmentsForHash_(dedup, cfg.Calendar_Timezone);
@@ -4169,6 +4189,7 @@ function onOpen() {
            **************************************************************/
           .addItem('Backfill County File Map', 'utilBackfillCountyFileMap')
           .addItem('Write Assigned Volunteers Tabs', 'utilWriteAssignedVolunteersTabs_AllCounties')
+          .addItem('Test Date/Time Formatting', 'utilTestDateTimeFormatting')
           .addItem('Reset County Packet Progress', 'utilResetCountyPacketResume')
       )
     .addToUi();
@@ -4180,6 +4201,88 @@ function formatAssignmentDate_(y, m, d) {
   const dow    = new Date(y, m - 1, d).getDay();
   return `${days[dow]} ${months[m - 1]} ${String(d).padStart(2,'0')} ${y}`;
 }
+
+function formatAssignmentTime_(hh, mm) {
+  const period = hh >= 12 ? 'PM' : 'AM';
+  const h12    = hh % 12 || 12;
+  const mmStr  = String(mm).padStart(2, '0');
+  return `${h12}:${mmStr} ${period} ET`;
+}
+
+
+function utilTestDateTimeFormatting() {
+  const tz = 'America/New_York';
+
+  const dateTests = [
+    new Date('2026-11-03T12:00:00'),
+    'Tue Nov 03 2026',
+    '2026-11-03',
+    '11/03/2026',
+    '11/3/26',
+  ];
+
+  const timeTests = [
+    new Date('2026-11-03T07:00:00'),
+    '7:00 AM ET',
+    '13:00 ET',
+    '7:00 AM',
+    '13:00',
+    '7 AM',
+    '0700',
+    0.291666,
+  ];
+
+  const dateResults = dateTests.map(v => {
+    try {
+      const parsed = parseDateFlexible_(v, tz);
+      const formatted = formatAssignmentDate_(parsed.y, parsed.m, parsed.d);
+      return `  INPUT: "${v}" → PARSED: ${JSON.stringify(parsed)} → FORMATTED: "${formatted}"`;
+    } catch (e) {
+      return `  INPUT: "${v}" → ERROR: ${e}`;
+    }
+  });
+
+  const timeResults = timeTests.map(v => {
+    try {
+      const parsed = parseTimeFlexible_(v, tz);
+      const formatted = Utilities.formatDate(
+        new Date(2026, 10, 3, parsed.hh, parsed.mm), tz, 'h:mm a z'
+      );
+      return `  INPUT: "${v}" → PARSED: ${JSON.stringify(parsed)} → FORMATTED: "${formatted}"`;
+    } catch (e) {
+      return `  INPUT: "${v}" → ERROR: ${e}`;
+    }
+  });
+
+  const combinedTests = [
+    { date: 'Tue Nov 03 2026', start: '7:00 AM ET', end: '1:00 PM ET' },
+    { date: new Date('2026-11-03T00:00:00'), start: new Date('2026-11-03T07:00:00'), end: new Date('2026-11-03T13:00:00') },
+  ];
+
+  const combinedResults = combinedTests.map(t => {
+    try {
+      const dateObj  = parseDateFlexible_(t.date, tz);
+      const startObj = parseTimeFlexible_(t.start, tz);
+      const endObj   = parseTimeFlexible_(t.end, tz);
+      const display  = `${formatAssignmentDate_(dateObj.y, dateObj.m, dateObj.d)} | ${formatAssignmentTime_(startObj.hh, startObj.mm)} - ${formatAssignmentTime_(endObj.hh, endObj.mm)}`;
+      return `  INPUT: date="${t.date}" start="${t.start}" end="${t.end}"\n  OUTPUT: "${display}"`;
+    } catch (e) {
+      return `  INPUT: date="${t.date}" → ERROR: ${e}`;
+    }
+  });
+
+  const report = [
+    '=== DATE PARSING ===', ...dateResults, '',
+    '=== TIME PARSING ===', ...timeResults, '',
+    '=== COMBINED DISPLAY ===', ...combinedResults,
+  ].join('\n');
+
+  console.log(report);
+  SpreadsheetApp.getUi().alert(
+    'Date/Time formatting test complete. Check Executions log for full results.\n\nFirst combined result:\n' + combinedResults[0]
+  );
+}
+
 
 function utilResetCountyPacketResume() {
   PropertiesService.getScriptProperties().deleteProperty('P4_COUNTY_PKT_RESUME');
