@@ -16,6 +16,17 @@ export default function Money({ people, settings }) {
   const paymentList = payments.data || [];
   const money = summary.data;
   const pct = money && money.totalNeeded ? Math.min(100, Math.round((money.collected / money.totalNeeded) * 100)) : 0;
+  const s = settings.data || {};
+  const me = peopleList.find(p => p.id === identity.personId);
+  const organizerNames = peopleList.filter(p => p.isOrganizer).map(p => p.name).join(' & ');
+
+  // installments derived from the actual payment rows so they always match what setup created
+  const installments = [];
+  for (const r of paymentList) {
+    if (!installments.find(i => i.dueLabel === r.dueLabel && i.dueDate === r.dueDate)) {
+      installments.push({ dueLabel: r.dueLabel, dueDate: r.dueDate, amount: r.amount });
+    }
+  }
 
   async function markStatus(p, status) {
     try {
@@ -28,10 +39,11 @@ export default function Money({ people, settings }) {
   return (
     <div>
       <div className="card">
-        <h3>💵 $365/person — $315 lodging + $50 food</h3>
+        <h3>💵 {s.costPerPerson ? `$${s.costPerPerson}/person` : 'Trip cost'}{s.lodgingCost && s.foodCost ? ` — $${s.lodgingCost} lodging + $${s.foodCost} food` : ''}</h3>
         <div className="chip-row">
-          <span className="chip">Payment 1: $182.50 due Thu Jul 31 ({countdownLabel('2026-07-31')})</span>
-          <span className="chip">Payment 2: $182.50 due Thu Sep 18 ({countdownLabel('2026-09-18')})</span>
+          {installments.map(i => (
+            <span key={i.dueLabel + i.dueDate} className="chip">{i.dueLabel}: ${i.amount.toFixed(2)} due {i.dueDate} ({countdownLabel(i.dueDate)})</span>
+          ))}
         </div>
         <div className="small-muted">Pay via Zelle or Apple Pay.</div>
         {money && (
@@ -63,7 +75,7 @@ export default function Money({ people, settings }) {
                       {r.personId === identity.personId && r.status === 'not_sent' && (
                         <button className="btn small ghost" onClick={() => markStatus(r, 'sent')}>Mark Sent</button>
                       )}
-                      {identity.personName === 'Brandon' && r.status !== 'confirmed' && (
+                      {me?.isOrganizer && r.status !== 'confirmed' && (
                         <button className="btn small" onClick={() => markStatus(r, 'confirmed')}>Confirm</button>
                       )}
                     </span>
@@ -72,7 +84,7 @@ export default function Money({ people, settings }) {
               </div>
             );
           })}
-          <p className="small-muted">Only organizers (Brandon &amp; Rachel) can mark payments Confirmed.</p>
+          <p className="small-muted">Only organizers{organizerNames ? ` (${organizerNames})` : ''} can mark payments Confirmed.</p>
         </div>
       )}
 

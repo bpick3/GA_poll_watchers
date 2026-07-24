@@ -1,13 +1,14 @@
 import { useIdentity } from '../identity';
 
-export default function RosterPicker({ peopleData }) {
+export default function RosterPicker({ peopleData, settings }) {
   const identity = useIdentity();
   const people = peopleData.data || [];
+  const tripName = (settings?.data || {}).tripName || 'the trip';
 
   return (
     <div className="roster-picker">
       <div className="hero-emoji">🍂🏔️🔥</div>
-      <h1>Cabin Trip 2026</h1>
+      <h1>{tripName}</h1>
       <p>Who's this? Tap your name to get in.</p>
       <div className="roster-grid">
         {people.map(p => (

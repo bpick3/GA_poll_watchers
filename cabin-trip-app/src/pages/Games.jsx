@@ -12,8 +12,9 @@ export default function Games({ people }) {
   const birthdayChecklist = usePoll('/birthday-checklist', 8000);
   const surprises = usePoll('/surprise-ideas', 8000);
   const peopleList = people.data || [];
+  const guestsOfHonor = peopleList.filter(p => p.isGuestOfHonor);
 
-  const isGuestOfHonor = ['Brandon', 'Rachel', 'Lance'].includes(identity.personName);
+  const isGuestOfHonor = guestsOfHonor.some(p => p.id === identity.personId);
 
   async function claimGame(g) {
     const mine = identity.personName;
@@ -47,10 +48,11 @@ export default function Games({ people }) {
 
       {sub === 'birthday' && (
         <div>
-          {['Brandon', 'Rachel', 'Lance'].map(person => (
-            <div key={person} className="card">
-              <h3>🎂 {person}'s Moments</h3>
-              {(birthdayChecklist.data || []).filter(i => i.forPerson === person).map(i => (
+          {guestsOfHonor.length === 0 && <p className="small-muted">No guests of honor set — mark someone 🎂 in Settings to unlock birthday planning.</p>}
+          {guestsOfHonor.map(person => (
+            <div key={person.id} className="card">
+              <h3>🎂 {person.name}'s Moments</h3>
+              {(birthdayChecklist.data || []).filter(i => i.forPerson === person.name).map(i => (
                 <div key={i.id} className={`checklist-item ${i.done ? 'done' : ''}`}>
                   <input type="checkbox" checked={!!i.done} onChange={async () => { await api.patch(`/birthday-checklist/${i.id}`, { done: !i.done }); birthdayChecklist.reload(); }} />
                   <span>{i.item}</span>
@@ -81,7 +83,7 @@ function SurpriseIdeas({ surprises, people, identity }) {
   return (
     <div className="card amber-glow">
       <h3>🤫 Surprise Ideas</h3>
-      <div className="small-muted">Hidden from Brandon, Rachel & Lance.</div>
+      <div className="small-muted">Hidden from the guests of honor.</div>
       {(surprises.data || []).map(s => (
         <div key={s.id} className="note-bubble">
           <div className="meta">{nameOf(people, s.personId) || 'Someone'}</div>
@@ -99,13 +101,42 @@ function SurpriseIdeas({ surprises, people, identity }) {
 function Tournament({ tournaments, people }) {
   const list = tournaments.data || [];
   const t = list[0];
+  const [name, setName] = useState('Tournament');
+  const [selected, setSelected] = useState([]);
 
   async function advance(matchId, winner) {
     await api.post(`/tournaments/${t.id}/advance`, { matchId, winner });
     tournaments.reload();
   }
 
-  if (!t) return <p className="small-muted">No tournament yet.</p>;
+  function toggleSelected(id) {
+    setSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
+  }
+
+  async function create() {
+    if (selected.length < 2) return alert('Pick at least 2 players.');
+    const players = people.filter(p => selected.includes(p.id)).map(p => p.name);
+    await api.post('/tournaments', { name, players });
+    tournaments.reload();
+  }
+
+  if (!t) {
+    return (
+      <div className="card">
+        <h3>🏓 New Tournament</h3>
+        <div className="field"><label>Name</label><input type="text" value={name} onChange={e => setName(e.target.value)} /></div>
+        <div className="field">
+          <label>Players</label>
+          <div className="chip-row">
+            {people.map(p => (
+              <span key={p.id} className={`chip ${selected.includes(p.id) ? 'amber' : ''}`} style={{ cursor: 'pointer' }} onClick={() => toggleSelected(p.id)}>{p.name}</span>
+            ))}
+          </div>
+        </div>
+        <button className="btn small" onClick={create}>Create bracket</button>
+      </div>
+    );
+  }
 
   return (
     <div className="card">

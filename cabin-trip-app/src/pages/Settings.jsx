@@ -7,9 +7,17 @@ export default function Settings({ people, settings }) {
   const peopleList = people.data || [];
   const [newName, setNewName] = useState('');
   const s = settings.data || {};
-  const [wifi, setWifi] = useState(s.wifiPassword || '');
-  const [checkIn, setCheckIn] = useState(s.checkIn || '');
-  const [checkOut, setCheckOut] = useState(s.checkOut || '');
+
+  const [trip, setTrip] = useState({
+    tripName: s.tripName || '', tripStart: s.tripStart || '', tripEnd: s.tripEnd || '',
+    address: s.address || '', rentalName: s.rentalName || '', rentalLink: s.rentalLink || '',
+    costPerPerson: s.costPerPerson || '', lodgingCost: s.lodgingCost || '', foodCost: s.foodCost || '',
+  });
+  const [house, setHouse] = useState({
+    wifiPassword: s.wifiPassword || '', checkIn: s.checkIn || '', checkOut: s.checkOut || '',
+    houseRules: s.houseRules || '', quietHours: s.quietHours || '', altitudeTips: s.altitudeTips || '',
+    emergencyInfo: s.emergencyInfo || '', houseDescription: s.houseDescription || '',
+  });
 
   async function addPerson() {
     if (!newName.trim()) return;
@@ -27,27 +35,61 @@ export default function Settings({ people, settings }) {
     await api.patch(`/people/${p.id}`, { status: p.status === 'confirmed' ? 'maybe' : 'confirmed' });
     people.reload();
   }
+  async function toggleOrganizer(p) {
+    await api.patch(`/people/${p.id}`, { isOrganizer: p.isOrganizer ? 0 : 1 });
+    people.reload();
+  }
+  async function toggleGoh(p) {
+    await api.patch(`/people/${p.id}`, { isGuestOfHonor: p.isGuestOfHonor ? 0 : 1 });
+    people.reload();
+  }
   async function removePerson(p) {
     if (!confirm(`Remove ${p.name} from the roster?`)) return;
     await api.del(`/people/${p.id}`);
     people.reload();
   }
+  async function saveTrip() {
+    await api.patch('/settings', trip);
+    settings.reload();
+  }
   async function saveHouseInfo() {
-    await api.patch('/settings', { wifiPassword: wifi, checkIn, checkOut });
+    await api.patch('/settings', house);
     settings.reload();
   }
 
   return (
     <div>
       <div className="card">
+        <h3>🏔️ Trip Basics</h3>
+        <div className="field"><label>Trip name</label><input type="text" value={trip.tripName} onChange={e => setTrip(t => ({ ...t, tripName: e.target.value }))} /></div>
+        <div className="row">
+          <div className="field"><label>Start date</label><input type="date" value={trip.tripStart} onChange={e => setTrip(t => ({ ...t, tripStart: e.target.value }))} /></div>
+          <div className="field"><label>End date</label><input type="date" value={trip.tripEnd} onChange={e => setTrip(t => ({ ...t, tripEnd: e.target.value }))} /></div>
+        </div>
+        <div className="field"><label>Address</label><input type="text" value={trip.address} onChange={e => setTrip(t => ({ ...t, address: e.target.value }))} /></div>
+        <div className="row">
+          <div className="field"><label>Rental name</label><input type="text" value={trip.rentalName} onChange={e => setTrip(t => ({ ...t, rentalName: e.target.value }))} /></div>
+          <div className="field"><label>Listing link</label><input type="text" value={trip.rentalLink} onChange={e => setTrip(t => ({ ...t, rentalLink: e.target.value }))} /></div>
+        </div>
+        <div className="row">
+          <div className="field"><label>Lodging/person</label><input type="number" value={trip.lodgingCost} onChange={e => setTrip(t => ({ ...t, lodgingCost: e.target.value }))} /></div>
+          <div className="field"><label>Food/person</label><input type="number" value={trip.foodCost} onChange={e => setTrip(t => ({ ...t, foodCost: e.target.value }))} /></div>
+          <div className="field"><label>Total/person</label><input type="number" value={trip.costPerPerson} onChange={e => setTrip(t => ({ ...t, costPerPerson: e.target.value }))} /></div>
+        </div>
+        <button className="btn small" onClick={saveTrip}>Save trip basics</button>
+      </div>
+
+      <div className="card">
         <h3>👤 Roster</h3>
         {peopleList.map(p => (
           <div key={p.id} className="list-item">
             <span>{p.name}{p.isGuestOfHonor ? ' 🎂' : ''}{p.isOrganizer ? ' (organizer)' : ''}</span>
-            <span className="row">
+            <span className="row wrap">
               <button className="btn small ghost" onClick={() => toggleStatus(p)}>{p.status}</button>
+              <button className="btn small ghost" onClick={() => toggleOrganizer(p)}>{p.isOrganizer ? 'Unmake organizer' : 'Make organizer'}</button>
+              <button className="btn small ghost" onClick={() => toggleGoh(p)}>{p.isGuestOfHonor ? 'Remove 🎂' : 'Mark 🎂'}</button>
               <button className="btn small ghost" onClick={() => rename(p)}>Rename</button>
-              {!p.isOrganizer && <button className="btn small danger" onClick={() => removePerson(p)}>×</button>}
+              <button className="btn small danger" onClick={() => removePerson(p)}>×</button>
             </span>
           </div>
         ))}
@@ -58,11 +100,18 @@ export default function Settings({ people, settings }) {
       </div>
 
       <div className="card">
-        <h3>🏡 House Info Editable Fields</h3>
-        <div className="field"><label>WiFi Password</label><input type="text" value={wifi} onChange={e => setWifi(e.target.value)} /></div>
-        <div className="field"><label>Check-in</label><input type="text" value={checkIn} onChange={e => setCheckIn(e.target.value)} /></div>
-        <div className="field"><label>Check-out</label><input type="text" value={checkOut} onChange={e => setCheckOut(e.target.value)} /></div>
-        <button className="btn small" onClick={saveHouseInfo}>Save</button>
+        <h3>🏡 House Info</h3>
+        <div className="row">
+          <div className="field"><label>Check-in</label><input type="text" value={house.checkIn} onChange={e => setHouse(h => ({ ...h, checkIn: e.target.value }))} /></div>
+          <div className="field"><label>Check-out</label><input type="text" value={house.checkOut} onChange={e => setHouse(h => ({ ...h, checkOut: e.target.value }))} /></div>
+        </div>
+        <div className="field"><label>WiFi Password</label><input type="text" value={house.wifiPassword} onChange={e => setHouse(h => ({ ...h, wifiPassword: e.target.value }))} /></div>
+        <div className="field"><label>House Rules</label><textarea value={house.houseRules} onChange={e => setHouse(h => ({ ...h, houseRules: e.target.value }))} /></div>
+        <div className="field"><label>Quiet Hours</label><input type="text" value={house.quietHours} onChange={e => setHouse(h => ({ ...h, quietHours: e.target.value }))} /></div>
+        <div className="field"><label>Altitude / Local Tips</label><textarea value={house.altitudeTips} onChange={e => setHouse(h => ({ ...h, altitudeTips: e.target.value }))} /></div>
+        <div className="field"><label>Emergency Info</label><textarea value={house.emergencyInfo} onChange={e => setHouse(h => ({ ...h, emergencyInfo: e.target.value }))} /></div>
+        <div className="field"><label>About the House</label><textarea value={house.houseDescription} onChange={e => setHouse(h => ({ ...h, houseDescription: e.target.value }))} /></div>
+        <button className="btn small" onClick={saveHouseInfo}>Save house info</button>
       </div>
 
       <div className="card">

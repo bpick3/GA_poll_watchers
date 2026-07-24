@@ -36,14 +36,22 @@ export default function Home({ people, settings, setTab }) {
   const money = moneySummary.data;
   const pct = money && money.totalNeeded ? Math.min(100, Math.round((money.collected / money.totalNeeded) * 100)) : 0;
 
+  const upcomingInstallments = [];
+  for (const r of (payments.data || [])) {
+    if (!upcomingInstallments.find(i => i.dueLabel === r.dueLabel && i.dueDate === r.dueDate)) {
+      upcomingInstallments.push({ dueLabel: r.dueLabel, dueDate: r.dueDate });
+    }
+  }
+
   return (
     <div>
       <div className="card" style={{ background: 'linear-gradient(160deg, #d9822b, #f0a94e)', color: 'white' }}>
         <h2 style={{ color: 'white' }}>🏔️ {countdownLabel(s.tripStart)} until we head up!</h2>
         <div className="small-muted" style={{ color: 'rgba(255,255,255,0.85)' }}>{s.tripStart} → {s.tripEnd} · {s.address}</div>
         <div className="chip-row">
-          <span className="chip">💵 Payment 1: {countdownLabel('2026-07-31')}</span>
-          <span className="chip">💵 Payment 2: {countdownLabel('2026-09-18')}</span>
+          {upcomingInstallments.map(i => (
+            <span key={i.dueLabel + i.dueDate} className="chip">💵 {i.dueLabel}: {countdownLabel(i.dueDate)}</span>
+          ))}
         </div>
       </div>
 

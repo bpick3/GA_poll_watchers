@@ -3,6 +3,7 @@ import { IdentityContext, useIdentityState } from './identity';
 import { usePoll } from './usePoll';
 import { api } from './api';
 import RosterPicker from './pages/RosterPicker.jsx';
+import Setup from './pages/Setup.jsx';
 import Home from './pages/Home.jsx';
 import Schedule from './pages/Schedule.jsx';
 import Food from './pages/Food.jsx';
@@ -22,22 +23,40 @@ export default function App() {
   const [tab, setTab] = useState('home');
   const people = usePoll('/people', 10000);
   const settings = usePoll('/settings', 15000);
+  const s = settings.data || {};
+
+  if (settings.data && s.setupComplete !== '1') {
+    return (
+      <IdentityContext.Provider value={identity}>
+        <Setup settings={settings} />
+      </IdentityContext.Provider>
+    );
+  }
+
+  if (!settings.data) {
+    return <div className="app-loading">🍂 Loading…</div>;
+  }
 
   if (!identity.personId) {
     return (
       <IdentityContext.Provider value={identity}>
-        <RosterPicker peopleData={people} />
+        <RosterPicker peopleData={people} settings={settings} />
       </IdentityContext.Provider>
     );
   }
+
+  const gohNames = (people.data || []).filter(p => p.isGuestOfHonor).map(p => `${p.name} 🎂`).join(' · ');
+  const dateRangeLabel = s.tripStart && s.tripEnd
+    ? `${new Date(s.tripStart + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}–${new Date(s.tripEnd + 'T00:00:00').toLocaleDateString('en-US', { day: 'numeric' })}`
+    : '';
 
   return (
     <IdentityContext.Provider value={identity}>
       <div className="app-shell">
         <header className="app-header">
           <div>
-            <h1>🏔️ Cabin Trip 2026</h1>
-            <div className="subtitle">Brandon 🎂 · Rachel 🎂 · Lance 🎂 — Oct 2–5</div>
+            <h1>🏔️ {s.tripName || 'Cabin Fever 2026'}</h1>
+            <div className="subtitle">{gohNames}{gohNames && dateRangeLabel ? ' — ' : ''}{dateRangeLabel}</div>
           </div>
           <button className="whoami" onClick={() => identity.clearPerson()}>{identity.personName} ⏷</button>
         </header>

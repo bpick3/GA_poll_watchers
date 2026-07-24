@@ -43,7 +43,9 @@ api.patch('/people/:id', (req, res) => {
   if (!p) return res.status(404).json({ error: 'not found' });
   const name = req.body.name ?? p.name;
   const status = req.body.status ?? p.status;
-  db.prepare('UPDATE people SET name=?, status=? WHERE id=?').run(name, status, req.params.id);
+  const isOrganizer = req.body.isOrganizer !== undefined ? (req.body.isOrganizer ? 1 : 0) : p.isOrganizer;
+  const isGuestOfHonor = req.body.isGuestOfHonor !== undefined ? (req.body.isGuestOfHonor ? 1 : 0) : p.isGuestOfHonor;
+  db.prepare('UPDATE people SET name=?, status=?, isOrganizer=?, isGuestOfHonor=? WHERE id=?').run(name, status, isOrganizer, isGuestOfHonor, req.params.id);
   res.json(db.prepare('SELECT * FROM people WHERE id=?').get(req.params.id));
 });
 api.delete('/people/:id', (req, res) => {
@@ -64,6 +66,97 @@ api.patch('/settings', (req, res) => {
   const obj = {};
   for (const r of rows) obj[r.key] = r.value;
   res.json(obj);
+});
+
+// ---------- setup wizard ----------
+function dateRange(start, end) {
+  const out = [];
+  const d = new Date(start + 'T00:00:00');
+  const last = new Date(end + 'T00:00:00');
+  while (d <= last) {
+    out.push(d.toISOString().slice(0, 10));
+    d.setDate(d.getDate() + 1);
+  }
+  return out;
+}
+
+api.post('/setup', (req, res) => {
+  const b = req.body || {};
+  if (!b.tripName || !b.tripStart || !b.tripEnd) {
+    return res.status(400).json({ error: 'tripName, tripStart, and tripEnd are required' });
+  }
+
+  const run = db.transaction(() => {
+    const setSetting = db.prepare('INSERT INTO settings (key, value) VALUES (?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value');
+    const settingFields = [
+      'tripName', 'tripStart', 'tripEnd', 'address', 'rentalName', 'rentalLink',
+      'costPerPerson', 'lodgingCost', 'foodCost', 'checkIn', 'checkOut', 'wifiPassword',
+      'houseRules', 'quietHours', 'altitudeTips', 'emergencyInfo', 'houseDescription',
+    ];
+    for (const key of settingFields) {
+      if (b[key] !== undefined) setSetting.run(key, String(b[key]));
+    }
+
+    // roster
+    const insertPerson = db.prepare('INSERT INTO people (id, name, status, isOrganizer, isGuestOfHonor) VALUES (?,?,?,?,?)');
+    const personIds = [];
+    for (const p of (b.roster || [])) {
+      if (!p.name || !p.name.trim()) continue;
+      const id = uuid();
+      insertPerson.run(id, p.name.trim(), p.status === 'maybe' ? 'maybe' : 'confirmed', p.isOrganizer ? 1 : 0, p.isGuestOfHonor ? 1 : 0);
+      personIds.push({ id, ...p });
+    }
+
+    // days + blank meal rows, spanning tripStart..tripEnd
+    const insertDay = db.prepare('INSERT INTO days (id, date, label, theme, sortOrder) VALUES (?,?,?,?,?)');
+    const insertMeal = db.prepare('INSERT INTO meals (id, dayId, mealType, plan, cooks, cleanup) VALUES (?,?,?,?,\'\',\'\')');
+    const dates = dateRange(b.tripStart, b.tripEnd);
+    dates.forEach((date, i) => {
+      const dayId = uuid();
+      const weekday = new Date(date + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'short' });
+      const label = `${weekday} ${date.slice(5).replace('-', '/')}`;
+      insertDay.run(dayId, date, label, 'Day plans TBD 🍂', i);
+      for (const mt of ['Breakfast', 'Lunch', 'Dinner', 'Snacks']) {
+        insertMeal.run(uuid(), dayId, mt, '');
+      }
+    });
+
+    // rooms
+    const insertRoom = db.prepare('INSERT INTO rooms (id, name, bed, capacity, details) VALUES (?,?,?,?,?)');
+    for (const r of (b.rooms || [])) {
+      if (!r.name || !r.name.trim()) continue;
+      insertRoom.run(uuid(), r.name.trim(), r.bed || '', Number(r.capacity) || 1, r.details || '');
+    }
+
+    // payment schedule — two installments applied to every confirmed/maybe person
+    const insertPayment = db.prepare('INSERT INTO payments (id, personId, dueLabel, dueDate, amount, status) VALUES (?,?,?,?,?,\'not_sent\')');
+    const installments = [
+      { label: b.payment1Label, date: b.payment1Date, amount: b.payment1Amount },
+      { label: b.payment2Label, date: b.payment2Date, amount: b.payment2Amount },
+    ].filter(p => p.label && p.date && p.amount);
+    for (const person of personIds) {
+      for (const inst of installments) {
+        insertPayment.run(uuid(), person.id, inst.label, inst.date, Number(inst.amount));
+      }
+    }
+
+    // default birthday checklist for anyone flagged as a guest of honor
+    const insertBday = db.prepare('INSERT INTO birthday_checklist (id, forPerson, item, done) VALUES (?,?,?,0)');
+    for (const person of personIds.filter(p => p.isGuestOfHonor)) {
+      for (const item of ['Cake/dessert plan', 'Candles', 'Group toast', '"Hot seat" appreciation round', 'Photo moment']) {
+        insertBday.run(uuid(), person.name.trim(), `${item} for ${person.name.trim()}`);
+      }
+    }
+
+    setSetting.run('setupComplete', '1');
+  });
+
+  try {
+    run();
+  } catch (e) {
+    return res.status(400).json({ error: e.message });
+  }
+  res.json({ ok: true });
 });
 
 // ---------- schedule ----------
@@ -237,12 +330,14 @@ api.patch('/payments/:id', (req, res) => {
 
 api.get('/money-summary', (req, res) => {
   const people = db.prepare('SELECT * FROM people').all();
+  const confirmedIds = new Set(people.filter(p => p.status === 'confirmed').map(p => p.id));
   const payments = db.prepare('SELECT * FROM payments').all();
-  const collected = payments.filter(p => p.status === 'confirmed').reduce((s, p) => s + p.amount, 0);
+  const confirmedPayments = payments.filter(p => confirmedIds.has(p.personId));
+  const collected = confirmedPayments.filter(p => p.status === 'confirmed').reduce((s, p) => s + p.amount, 0);
+  const totalNeeded = confirmedPayments.reduce((s, p) => s + p.amount, 0);
   const headcount = people.filter(p => p.status === 'confirmed' || p.status === 'maybe').length;
-  const confirmedHeadcount = people.filter(p => p.status === 'confirmed').length;
-  const costPerPerson = 365;
-  const totalNeeded = confirmedHeadcount * costPerPerson;
+  const confirmedHeadcount = confirmedIds.size;
+  const costPerPerson = Number(db.prepare("SELECT value FROM settings WHERE key='costPerPerson'").get()?.value) || 0;
   res.json({ collected, totalNeeded, confirmedHeadcount, headcount, costPerPerson });
 });
 
@@ -403,6 +498,27 @@ api.get('/rooms', (req, res) => {
   const rooms = db.prepare('SELECT * FROM rooms').all();
   const assigns = db.prepare('SELECT * FROM room_assignments').all();
   res.json(rooms.map(r => ({ ...r, occupants: assigns.filter(a => a.roomId === r.id) })));
+});
+api.post('/rooms', (req, res) => {
+  const { name, bed, capacity, details } = req.body;
+  if (!name) return res.status(400).json({ error: 'name required' });
+  const id = uuid();
+  db.prepare('INSERT INTO rooms (id, name, bed, capacity, details) VALUES (?,?,?,?,?)')
+    .run(id, name, bed || '', Number(capacity) || 1, details || '');
+  res.json(db.prepare('SELECT * FROM rooms WHERE id=?').get(id));
+});
+api.patch('/rooms/:id', (req, res) => {
+  const r = db.prepare('SELECT * FROM rooms WHERE id=?').get(req.params.id);
+  if (!r) return res.status(404).json({ error: 'not found' });
+  const merged = { ...r, ...req.body };
+  db.prepare('UPDATE rooms SET name=?, bed=?, capacity=?, details=? WHERE id=?')
+    .run(merged.name, merged.bed, Number(merged.capacity) || 1, merged.details, req.params.id);
+  res.json(db.prepare('SELECT * FROM rooms WHERE id=?').get(req.params.id));
+});
+api.delete('/rooms/:id', (req, res) => {
+  db.prepare('DELETE FROM rooms WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM room_assignments WHERE roomId=?').run(req.params.id);
+  res.json({ ok: true });
 });
 api.post('/rooms/:id/assign', (req, res) => {
   const { personId, note } = req.body;

@@ -239,6 +239,7 @@ MIT © stac labs
 
 ## Other projects in this repo
 
-- [`cabin-trip-app/`](./cabin-trip-app/README.md) — Cabin Trip 2026, a mobile-first collaborative
-  trip-planning web app for the birthday cabin weekend. Unrelated to the poll watcher automation
-  above; see its own README for setup and deploy instructions.
+- [`cabin-trip-app/`](./cabin-trip-app/README.md) — Cabin Fever 2026, a mobile-first collaborative
+  trip-planning web app with an in-app setup wizard (trip name, dates, roster, rooms — all
+  configurable, nothing hardcoded). Unrelated to the poll watcher automation above; see its own
+  README for setup and deploy instructions.

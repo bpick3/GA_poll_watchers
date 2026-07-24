@@ -36,7 +36,7 @@ function HouseInfo({ settings }) {
   return (
     <div>
       <div className="card">
-        <h3>🏡 227 North Fork Road</h3>
+        <h3>🏡 {s.address || 'House Info'}</h3>
         <a href={mapsUrl} target="_blank" rel="noreferrer" className="btn small secondary" style={{ display: 'inline-block', marginBottom: 8 }}>📍 Open in Google Maps</a>
         <div className="small-muted">{s.rentalName} — <a href={s.rentalLink} target="_blank" rel="noreferrer">listing link</a></div>
         <div className="chip-row">
@@ -49,16 +49,34 @@ function HouseInfo({ settings }) {
         <div className="field"><label>Altitude Tips 🏔️</label><p>{s.altitudeTips}</p></div>
         <div className="field"><label>Emergency Info</label><p>{s.emergencyInfo}</p></div>
       </div>
-      <div className="card">
-        <h3>The House</h3>
-        <p className="small-muted">4BR / 3 full + 2 half baths, sleeps 11. Private outdoor hot tub (~4 person), basement game/media room (ping pong, foosball, pinball, wet bar, TV, sectional + beanbags), great room with stone gas fireplace, covered patio with gas fire pit + heaters + BBQ, gourmet kitchen (dining seats 6, breakfast bar seats 5), Sonos, in-home laundry, garage, mudroom.</p>
-      </div>
+      {s.houseDescription && (
+        <div className="card">
+          <h3>The House</h3>
+          <p className="small-muted">{s.houseDescription}</p>
+        </div>
+      )}
     </div>
   );
 }
 
 function Rooms({ rooms, people }) {
   const list = rooms.data || [];
+  const [name, setName] = useState('');
+  const [bed, setBed] = useState('');
+  const [capacity, setCapacity] = useState(2);
+  const [details, setDetails] = useState('');
+
+  async function addRoom() {
+    if (!name.trim()) return;
+    await api.post('/rooms', { name, bed, capacity: Number(capacity), details });
+    setName(''); setBed(''); setDetails('');
+    rooms.reload();
+  }
+  async function removeRoom(id) {
+    if (!confirm('Remove this room?')) return;
+    await api.del(`/rooms/${id}`);
+    rooms.reload();
+  }
   async function assign(roomId, personId) {
     try {
       await api.post(`/rooms/${roomId}/assign`, { personId });
@@ -83,6 +101,7 @@ function Rooms({ rooms, people }) {
           <span className="cap">{r.occupants.length}/{r.capacity}</span>
           <h3>{r.name}</h3>
           <div className="small-muted">{r.bed} · {r.details}</div>
+          <button className="btn small ghost" onClick={() => removeRoom(r.id)}>Remove room</button>
           {r.occupants.map(o => (
             <div key={o.personId} className="list-item">
               <span>{nameOf(people, o.personId)}</span>
@@ -97,6 +116,16 @@ function Rooms({ rooms, people }) {
           )}
         </div>
       ))}
+      <div className="card">
+        <h3>+ Add a room</h3>
+        <div className="field"><label>Name</label><input type="text" value={name} onChange={e => setName(e.target.value)} /></div>
+        <div className="row">
+          <div className="field"><label>Bed type</label><input type="text" value={bed} onChange={e => setBed(e.target.value)} /></div>
+          <div className="field"><label>Capacity</label><input type="number" style={{ width: 80 }} value={capacity} onChange={e => setCapacity(e.target.value)} /></div>
+        </div>
+        <div className="field"><label>Details</label><input type="text" value={details} onChange={e => setDetails(e.target.value)} /></div>
+        <button className="btn small" onClick={addRoom}>Add room</button>
+      </div>
     </div>
   );
 }
