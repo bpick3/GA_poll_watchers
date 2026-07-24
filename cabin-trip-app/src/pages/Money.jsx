@@ -72,7 +72,7 @@ export default function Money({ people, settings }) {
               </div>
             );
           })}
-          <p className="small-muted">Only Brandon (organizer) can mark payments Confirmed.</p>
+          <p className="small-muted">Only organizers (Brandon &amp; Rachel) can mark payments Confirmed.</p>
         </div>
       )}
 

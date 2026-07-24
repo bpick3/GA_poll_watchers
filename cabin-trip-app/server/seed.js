@@ -11,7 +11,7 @@ export function seedIfEmpty() {
 
   const roster = [
     ['Brandon', 'confirmed', 1, 1],
-    ['Rachel', 'confirmed', 0, 1],
+    ['Rachel', 'confirmed', 1, 1],
     ['Lance', 'confirmed', 0, 1],
     ['Guest 1', 'confirmed', 0, 0],
     ['Guest 2', 'confirmed', 0, 0],
