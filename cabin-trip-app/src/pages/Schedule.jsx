@@ -73,12 +73,13 @@ export default function Schedule({ people }) {
           <h3>{day.theme}</h3>
         </div>
         <div className="field">
-          <label>Change theme</label>
+          <label>Pick from theme library</label>
           <select value={day.theme} onChange={e => changeTheme(day.id, e.target.value)}>
             <option value={day.theme}>{day.theme} (current)</option>
             {altThemes.filter(t => t !== day.theme).map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
+        <CustomThemeInput dayId={day.id} onSave={changeTheme} />
       </div>
 
       {(day.blocks || []).map(block => (
@@ -165,6 +166,24 @@ function EditBlock({ block, people, onDone, onDelete }) {
       <div className="row">
         <button className="btn small" onClick={save}>Save</button>
         <button className="btn small danger" onClick={onDelete}>Delete Block</button>
+      </div>
+    </div>
+  );
+}
+
+function CustomThemeInput({ dayId, onSave }) {
+  const [text, setText] = useState('');
+  async function save() {
+    if (!text.trim()) return;
+    await onSave(dayId, text.trim());
+    setText('');
+  }
+  return (
+    <div className="field">
+      <label>Or type a custom theme</label>
+      <div className="row">
+        <input type="text" placeholder="e.g. Board Game Bonanza 🎲" value={text} onChange={e => setText(e.target.value)} />
+        <button className="btn small" onClick={save}>Set</button>
       </div>
     </div>
   );

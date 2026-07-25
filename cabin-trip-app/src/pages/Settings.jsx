@@ -114,10 +114,50 @@ export default function Settings({ people, settings }) {
         <button className="btn small" onClick={saveHouseInfo}>Save house info</button>
       </div>
 
+      <ThemeLibrary settings={settings} />
+
       <div className="card">
         <h3>ℹ️ About You</h3>
         <p className="small-muted">Signed in as <strong>{identity.personName}</strong>.</p>
         <button className="btn small ghost" onClick={() => identity.clearPerson()}>Switch person</button>
+      </div>
+    </div>
+  );
+}
+
+function ThemeLibrary({ settings }) {
+  const s = settings.data || {};
+  const themes = (() => {
+    try { return JSON.parse(s.altThemes || '[]'); } catch { return []; }
+  })();
+  const [newTheme, setNewTheme] = useState('');
+
+  async function save(next) {
+    await api.patch('/settings', { altThemes: JSON.stringify(next) });
+    settings.reload();
+  }
+  async function add() {
+    if (!newTheme.trim()) return;
+    await save([...themes, newTheme.trim()]);
+    setNewTheme('');
+  }
+  async function remove(t) {
+    await save(themes.filter(x => x !== t));
+  }
+
+  return (
+    <div className="card">
+      <h3>🎭 Day Theme Library</h3>
+      <p className="small-muted">These show up as quick-pick options when changing a day's theme on the Schedule tab.</p>
+      {themes.map(t => (
+        <div key={t} className="list-item">
+          <span>{t}</span>
+          <button className="btn small danger" onClick={() => remove(t)}>×</button>
+        </div>
+      ))}
+      <div className="row" style={{ marginTop: 10 }}>
+        <input type="text" placeholder="e.g. Board Game Bonanza 🎲" value={newTheme} onChange={e => setNewTheme(e.target.value)} />
+        <button className="btn small" onClick={add}>Add</button>
       </div>
     </div>
   );
