@@ -90,15 +90,15 @@ export default function Games({ people, settings }) {
       {sub === 'birthday' && (
         <div>
           {guestsOfHonor.length === 0 && <p className="small-muted">No guests of honor set — mark someone 🎂 in Settings to unlock birthday planning.</p>}
-          {guestsOfHonor.map(person => (
+          {isGuestOfHonor && (
+            <div className="card amber-glow">
+              <p className="small-muted">🤫 Your own birthday card is hidden from you — everyone else can still see and plan it. You can see everyone else's below.</p>
+            </div>
+          )}
+          {guestsOfHonor.filter(person => person.id !== identity.personId).map(person => (
             <BirthdayCard key={person.id} person={person} checklist={birthdayChecklist} />
           ))}
           {!isGuestOfHonor && <SurpriseIdeas surprises={surprises} people={peopleList} identity={identity} />}
-          {isGuestOfHonor && (
-            <div className="card">
-              <p className="small-muted">🤫 This part of the app is hidden from birthday people. Nice try!</p>
-            </div>
-          )}
         </div>
       )}
     </div>
