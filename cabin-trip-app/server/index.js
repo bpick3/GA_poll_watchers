@@ -517,28 +517,22 @@ api.get('/tournaments', (req, res) => {
   res.json(rows.map(r => ({ ...r, players: JSON.parse(r.playersJson), bracket: JSON.parse(r.bracketJson) })));
 });
 api.post('/tournaments', (req, res) => {
-  const { name, players } = req.body;
+  const { name, players, mode } = req.body;
   const shuffled = [...players];
   const round1 = [];
   for (let i = 0; i < shuffled.length; i += 2) {
-    round1.push({ id: uuid(), p1: shuffled[i], p2: shuffled[i + 1] || null, winner: shuffled[i + 1] ? null : shuffled[i] });
+    const p1 = shuffled[i], p2 = shuffled[i + 1] || null;
+    round1.push({ id: uuid(), p1, p2, winner: p2 ? null : p1, votes: {} });
   }
   const id = uuid();
-  db.prepare('INSERT INTO tournaments (id, name, playersJson, bracketJson, championId) VALUES (?,?,?,?,NULL)')
-    .run(id, name, JSON.stringify(players), JSON.stringify({ rounds: [round1] }));
+  db.prepare('INSERT INTO tournaments (id, name, mode, playersJson, bracketJson, championId) VALUES (?,?,?,?,?,NULL)')
+    .run(id, name, mode === 'team' ? 'team' : 'individual', JSON.stringify(players), JSON.stringify({ rounds: [round1] }));
   res.json(db.prepare('SELECT * FROM tournaments WHERE id=?').get(id));
 });
-api.post('/tournaments/:id/advance', (req, res) => {
-  const t = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id);
-  if (!t) return res.status(404).json({ error: 'not found' });
-  const bracket = JSON.parse(t.bracketJson);
-  const { matchId, winner } = req.body; // winner may be null/omitted to un-pick a match
-  const roundIdx = bracket.rounds.findIndex(r => r.some(m => m.id === matchId));
-  if (roundIdx === -1) return res.status(404).json({ error: 'match not found' });
-  const match = bracket.rounds[roundIdx].find(m => m.id === matchId);
-  match.winner = winner || null;
 
-  // a pick (or un-pick) invalidates any later rounds derived from it — rebuild forward
+// after a match's winner is set/changed/cleared, later rounds derived from it
+// are no longer valid — discard them and regenerate forward from here
+function rebuildTournamentForward(bracket, roundIdx) {
   bracket.rounds = bracket.rounds.slice(0, roundIdx + 1);
   let championId = null;
   const currentRound = bracket.rounds[roundIdx];
@@ -551,16 +545,96 @@ api.post('/tournaments/:id/advance', (req, res) => {
       for (let i = 0; i < currentRound.length; i += 2) {
         const p1 = currentRound[i].winner;
         const p2 = currentRound[i + 1] ? currentRound[i + 1].winner : null;
-        nextRound.push({ id: uuid(), p1, p2, winner: p2 ? null : p1 });
+        nextRound.push({ id: uuid(), p1, p2, winner: p2 ? null : p1, votes: {} });
       }
       bracket.rounds.push(nextRound);
     }
   }
+  return championId;
+}
+
+// anyone can vote for who they saw win a match; the winner is whoever has
+// more votes (a tie leaves the match undecided and later rounds unbuilt)
+api.post('/tournaments/:id/vote', (req, res) => {
+  const t = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id);
+  if (!t) return res.status(404).json({ error: 'not found' });
+  const personId = req.body.personId || req.person?.id;
+  const { matchId, choice } = req.body; // choice: 'p1' | 'p2'
+  if (!personId) return res.status(400).json({ error: 'personId required' });
+  if (!['p1', 'p2'].includes(choice)) return res.status(400).json({ error: "choice must be 'p1' or 'p2'" });
+
+  const bracket = JSON.parse(t.bracketJson);
+  const roundIdx = bracket.rounds.findIndex(r => r.some(m => m.id === matchId));
+  if (roundIdx === -1) return res.status(404).json({ error: 'match not found' });
+  const match = bracket.rounds[roundIdx].find(m => m.id === matchId);
+  if (!match.p1 || !match.p2) return res.status(400).json({ error: 'this match has a bye — nothing to vote on' });
+
+  match.votes = match.votes || {};
+  if (match.votes[personId] === choice) delete match.votes[personId]; // tap again to un-vote
+  else match.votes[personId] = choice;
+
+  const p1Votes = Object.values(match.votes).filter(v => v === 'p1').length;
+  const p2Votes = Object.values(match.votes).filter(v => v === 'p2').length;
+  match.winner = p1Votes > p2Votes ? match.p1 : p2Votes > p1Votes ? match.p2 : null;
+
+  const championId = rebuildTournamentForward(bracket, roundIdx);
+  db.prepare('UPDATE tournaments SET bracketJson=?, championId=? WHERE id=?').run(JSON.stringify(bracket), championId, req.params.id);
+  res.json({ ...db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id), bracket });
+});
+
+// organizer-only escape hatch for a tied vote or other dispute
+api.post('/tournaments/:id/advance', requireOrganizer, (req, res) => {
+  const t = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id);
+  if (!t) return res.status(404).json({ error: 'not found' });
+  const bracket = JSON.parse(t.bracketJson);
+  const { matchId, winner } = req.body; // winner may be null/omitted to un-pick a match
+  const roundIdx = bracket.rounds.findIndex(r => r.some(m => m.id === matchId));
+  if (roundIdx === -1) return res.status(404).json({ error: 'match not found' });
+  const match = bracket.rounds[roundIdx].find(m => m.id === matchId);
+  match.winner = winner || null;
+  match.votes = {}; // manual override clears votes so the tally doesn't contradict it
+
+  const championId = rebuildTournamentForward(bracket, roundIdx);
   db.prepare('UPDATE tournaments SET bracketJson=?, championId=? WHERE id=?').run(JSON.stringify(bracket), championId, req.params.id);
   res.json({ ...db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id), bracket });
 });
 api.delete('/tournaments/:id', (req, res) => {
   db.prepare('DELETE FROM tournaments WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
+// ---------- teams ----------
+api.get('/teams', (req, res) => {
+  const teams = db.prepare('SELECT * FROM teams').all();
+  const members = db.prepare('SELECT * FROM team_members').all();
+  res.json(teams.map(t => ({ ...t, members: members.filter(m => m.teamId === t.id).map(m => m.personId) })));
+});
+api.post('/teams', (req, res) => {
+  const { name } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
+  const id = uuid();
+  db.prepare('INSERT INTO teams (id, name) VALUES (?,?)').run(id, name.trim());
+  res.json({ id });
+});
+api.patch('/teams/:id', (req, res) => {
+  const t = db.prepare('SELECT * FROM teams WHERE id=?').get(req.params.id);
+  if (!t) return res.status(404).json({ error: 'not found' });
+  db.prepare('UPDATE teams SET name=? WHERE id=?').run(req.body.name ?? t.name, req.params.id);
+  res.json(db.prepare('SELECT * FROM teams WHERE id=?').get(req.params.id));
+});
+api.delete('/teams/:id', (req, res) => {
+  db.prepare('DELETE FROM teams WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM team_members WHERE teamId=?').run(req.params.id);
+  res.json({ ok: true });
+});
+api.post('/teams/:id/join', (req, res) => {
+  const personId = req.body.personId || req.person?.id;
+  db.prepare('INSERT OR IGNORE INTO team_members (teamId, personId) VALUES (?,?)').run(req.params.id, personId);
+  res.json({ ok: true });
+});
+api.post('/teams/:id/leave', (req, res) => {
+  const personId = req.body.personId || req.person?.id;
+  db.prepare('DELETE FROM team_members WHERE teamId=? AND personId=?').run(req.params.id, personId);
   res.json({ ok: true });
 });
 

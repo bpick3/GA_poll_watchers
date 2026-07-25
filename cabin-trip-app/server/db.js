@@ -167,9 +167,21 @@ CREATE TABLE IF NOT EXISTS games_bring (
 CREATE TABLE IF NOT EXISTS tournaments (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
+  mode TEXT NOT NULL DEFAULT 'individual', -- individual | team
   playersJson TEXT NOT NULL,
   bracketJson TEXT NOT NULL,
   championId TEXT
+);
+
+CREATE TABLE IF NOT EXISTS teams (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+  teamId TEXT NOT NULL,
+  personId TEXT NOT NULL,
+  PRIMARY KEY (teamId, personId)
 );
 
 CREATE TABLE IF NOT EXISTS birthday_checklist (
@@ -241,6 +253,10 @@ CREATE TABLE IF NOT EXISTS cleanup_tasks (
 const mealColumns = db.prepare("PRAGMA table_info(meals)").all().map(c => c.name);
 if (!mealColumns.includes('skipped')) {
   db.exec('ALTER TABLE meals ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0');
+}
+const tournamentColumns = db.prepare("PRAGMA table_info(tournaments)").all().map(c => c.name);
+if (!tournamentColumns.includes('mode')) {
+  db.exec("ALTER TABLE tournaments ADD COLUMN mode TEXT NOT NULL DEFAULT 'individual'");
 }
 
 export { isNew };
