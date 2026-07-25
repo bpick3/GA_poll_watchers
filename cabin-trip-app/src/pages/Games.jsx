@@ -4,7 +4,7 @@ import { usePoll } from '../usePoll';
 import { api } from '../api';
 import { nameOf } from '../utils';
 
-export default function Games({ people }) {
+export default function Games({ people, settings }) {
   const identity = useIdentity();
   const [sub, setSub] = useState('library');
   const bring = usePoll('/games-bring', 8000);
@@ -13,13 +13,39 @@ export default function Games({ people }) {
   const surprises = usePoll('/surprise-ideas', 8000);
   const peopleList = people.data || [];
   const guestsOfHonor = peopleList.filter(p => p.isGuestOfHonor);
+  const [newGame, setNewGame] = useState('');
+  const [newHouseGame, setNewHouseGame] = useState('');
 
   const isGuestOfHonor = guestsOfHonor.some(p => p.id === identity.personId);
+
+  const houseGames = (() => {
+    try { return JSON.parse((settings?.data || {}).houseGames || '[]'); } catch { return []; }
+  })();
 
   async function claimGame(g) {
     const mine = identity.personName;
     await api.patch(`/games-bring/${g.id}`, { claimedBy: g.claimedBy ? null : mine });
     bring.reload();
+  }
+  async function addBringGame() {
+    if (!newGame.trim()) return;
+    await api.post('/games-bring', { name: newGame.trim() });
+    setNewGame('');
+    bring.reload();
+  }
+  async function removeBringGame(id) {
+    await api.del(`/games-bring/${id}`);
+    bring.reload();
+  }
+  async function addHouseGame() {
+    if (!newHouseGame.trim()) return;
+    await api.patch('/settings', { houseGames: JSON.stringify([...houseGames, newHouseGame.trim()]) });
+    setNewHouseGame('');
+    settings.reload();
+  }
+  async function removeHouseGame(g) {
+    await api.patch('/settings', { houseGames: JSON.stringify(houseGames.filter(x => x !== g)) });
+    settings.reload();
   }
 
   return (
@@ -33,14 +59,29 @@ export default function Games({ people }) {
       {sub === 'library' && (
         <div className="card">
           <h3>🏠 House Games</h3>
-          <div className="chip-row"><span className="chip">🏓 Ping Pong</span><span className="chip">⚽ Foosball</span><span className="chip">🕹️ Pinball</span></div>
+          <div className="chip-row">
+            {houseGames.map(g => <span key={g} className="chip" onClick={() => removeHouseGame(g)} style={{ cursor: 'pointer' }} title="Tap to remove">{g} ×</span>)}
+            {houseGames.length === 0 && <span className="small-muted">None added yet — what's already at the house? (ping pong, foosball, etc.)</span>}
+          </div>
+          <div className="row" style={{ marginTop: 8 }}>
+            <input type="text" placeholder="e.g. 🏓 Ping Pong" value={newHouseGame} onChange={e => setNewHouseGame(e.target.value)} />
+            <button className="btn small" onClick={addHouseGame}>Add</button>
+          </div>
+
           <h3 style={{ marginTop: 16 }}>🎲 Bring List</h3>
           {(bring.data || []).map(g => (
             <div key={g.id} className="list-item">
               <span>{g.name}</span>
-              <button className={`btn small ${g.claimedBy ? '' : 'ghost'}`} onClick={() => claimGame(g)}>{g.claimedBy || 'Claim'}</button>
+              <span className="row">
+                <button className={`btn small ${g.claimedBy ? '' : 'ghost'}`} onClick={() => claimGame(g)}>{g.claimedBy || 'Claim'}</button>
+                <button className="btn small danger" onClick={() => removeBringGame(g.id)}>×</button>
+              </span>
             </div>
           ))}
+          <div className="row" style={{ marginTop: 8 }}>
+            <input type="text" placeholder="e.g. Codenames" value={newGame} onChange={e => setNewGame(e.target.value)} />
+            <button className="btn small" onClick={addBringGame}>Add</button>
+          </div>
         </div>
       )}
 
@@ -50,15 +91,7 @@ export default function Games({ people }) {
         <div>
           {guestsOfHonor.length === 0 && <p className="small-muted">No guests of honor set — mark someone 🎂 in Settings to unlock birthday planning.</p>}
           {guestsOfHonor.map(person => (
-            <div key={person.id} className="card">
-              <h3>🎂 {person.name}'s Moments</h3>
-              {(birthdayChecklist.data || []).filter(i => i.forPerson === person.name).map(i => (
-                <div key={i.id} className={`checklist-item ${i.done ? 'done' : ''}`}>
-                  <input type="checkbox" checked={!!i.done} onChange={async () => { await api.patch(`/birthday-checklist/${i.id}`, { done: !i.done }); birthdayChecklist.reload(); }} />
-                  <span>{i.item}</span>
-                </div>
-              ))}
-            </div>
+            <BirthdayCard key={person.id} person={person} checklist={birthdayChecklist} />
           ))}
           {!isGuestOfHonor && <SurpriseIdeas surprises={surprises} people={peopleList} identity={identity} />}
           {isGuestOfHonor && (
@@ -68,6 +101,43 @@ export default function Games({ people }) {
           )}
         </div>
       )}
+    </div>
+  );
+}
+
+function BirthdayCard({ person, checklist }) {
+  const [item, setItem] = useState('');
+  const items = (checklist.data || []).filter(i => i.forPerson === person.name);
+
+  async function toggle(i) {
+    await api.patch(`/birthday-checklist/${i.id}`, { done: !i.done });
+    checklist.reload();
+  }
+  async function remove(id) {
+    await api.del(`/birthday-checklist/${id}`);
+    checklist.reload();
+  }
+  async function add() {
+    if (!item.trim()) return;
+    await api.post('/birthday-checklist', { forPerson: person.name, item: item.trim() });
+    setItem('');
+    checklist.reload();
+  }
+
+  return (
+    <div className="card">
+      <h3>🎂 {person.name}'s Moments</h3>
+      {items.map(i => (
+        <div key={i.id} className={`checklist-item ${i.done ? 'done' : ''}`}>
+          <input type="checkbox" checked={!!i.done} onChange={() => toggle(i)} />
+          <span style={{ flex: 1 }}>{i.item}</span>
+          <button className="btn small ghost" onClick={() => remove(i.id)}>×</button>
+        </div>
+      ))}
+      <div className="row" style={{ marginTop: 8 }}>
+        <input type="text" placeholder="Add a to-do…" value={item} onChange={e => setItem(e.target.value)} />
+        <button className="btn small" onClick={add}>Add</button>
+      </div>
     </div>
   );
 }

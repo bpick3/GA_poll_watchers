@@ -90,9 +90,7 @@ export default function Schedule({ people }) {
         <MovieNight day={day} onVote={vote} onNominate={nominate} identity={identity} people={peopleList} />
       )}
 
-      {day.hottubSlots && day.hottubSlots.length > 0 && (
-        <HotTub day={day} onToggle={toggleHotTub} identity={identity} people={peopleList} />
-      )}
+      <HotTub day={day} onToggle={toggleHotTub} identity={identity} people={peopleList} reload={days.reload} />
 
       <button className="btn secondary" onClick={() => setShowAddBlock(true)}>+ Add a Block</button>
       {showAddBlock && <AddBlockForm dayId={day.id} people={peopleList} onClose={() => { setShowAddBlock(false); days.reload(); }} />}
@@ -235,23 +233,45 @@ function MovieNight({ day, onVote, onNominate, identity, people }) {
   );
 }
 
-function HotTub({ day, onToggle, identity, people }) {
+function HotTub({ day, onToggle, identity, people, reload }) {
+  const [time, setTime] = useState('');
+  const slots = day.hottubSlots || [];
+
+  async function addSlot() {
+    if (!time.trim()) return;
+    await api.post('/hottub-slots', { dayId: day.id, startTime: time.trim() });
+    setTime('');
+    reload();
+  }
+  async function removeSlot(id) {
+    await api.del(`/hottub-slots/${id}`);
+    reload();
+  }
+
   return (
     <div className="card">
       <h3>♨️ Hot Tub Sign-ups</h3>
       <div className="small-muted">45-min slots, max 4 people</div>
-      {day.hottubSlots.map(slot => (
+      {slots.map(slot => (
         <div key={slot.id} className="list-item">
           <span>{slot.label} <span className="small-muted">({slot.signups.length}/4)</span></span>
-          <button
-            className={`btn small ${slot.signups.includes(identity.personId) ? '' : 'ghost'}`}
-            disabled={!slot.signups.includes(identity.personId) && slot.signups.length >= 4}
-            onClick={() => onToggle(slot.id)}
-          >
-            {slot.signups.includes(identity.personId) ? 'Leave' : 'Join'}
-          </button>
+          <span className="row">
+            <button
+              className={`btn small ${slot.signups.includes(identity.personId) ? '' : 'ghost'}`}
+              disabled={!slot.signups.includes(identity.personId) && slot.signups.length >= 4}
+              onClick={() => onToggle(slot.id)}
+            >
+              {slot.signups.includes(identity.personId) ? 'Leave' : 'Join'}
+            </button>
+            <button className="btn small danger" onClick={() => removeSlot(slot.id)}>×</button>
+          </span>
         </div>
       ))}
+      {slots.length === 0 && <p className="small-muted">No slots yet — add one below.</p>}
+      <div className="row" style={{ marginTop: 8 }}>
+        <input type="text" placeholder="e.g. 7:00 PM" value={time} onChange={e => setTime(e.target.value)} />
+        <button className="btn small" onClick={addSlot}>+ Add slot</button>
+      </div>
     </div>
   );
 }

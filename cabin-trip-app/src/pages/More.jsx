@@ -15,7 +15,7 @@ export default function More({ people, settings }) {
         <button className={sub === 'settings' ? 'active' : ''} onClick={() => setSub('settings')}>⚙️ Settings</button>
       </div>
       {sub === 'committees' && <Committees people={people} />}
-      {sub === 'games' && <Games people={people} />}
+      {sub === 'games' && <Games people={people} settings={settings} />}
       {sub === 'logistics' && <Logistics people={people} settings={settings} />}
       {sub === 'settings' && <Settings people={people} settings={settings} />}
     </div>

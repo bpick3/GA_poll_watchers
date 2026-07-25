@@ -122,9 +122,13 @@ function Groceries({ groceries, identity }) {
   const [item, setItem] = useState('');
   const [qty, setQty] = useState('');
 
+  // union of the suggested defaults + any custom categories people have typed in,
+  // so a custom category still gets its own section instead of disappearing
+  const allCategories = [...new Set([...CATEGORIES, ...list.map(g => g.category)])];
+
   async function add() {
     if (!item.trim()) return;
-    await api.post('/groceries', { category, item, qty });
+    await api.post('/groceries', { category: category.trim() || 'Other', item, qty });
     setItem(''); setQty('');
     groceries.reload();
   }
@@ -137,12 +141,16 @@ function Groceries({ groceries, identity }) {
     await api.patch(`/groceries/${g.id}`, { claimedBy: g.claimedBy, checked: !g.checked });
     groceries.reload();
   }
+  async function remove(id) {
+    await api.del(`/groceries/${id}`);
+    groceries.reload();
+  }
 
   return (
     <div>
       <div className="card">
         <h3>🛒 Shared Grocery List</h3>
-        {CATEGORIES.map(cat => {
+        {allCategories.map(cat => {
           const items = list.filter(g => g.category === cat);
           if (!items.length) return null;
           return (
@@ -153,6 +161,7 @@ function Groceries({ groceries, identity }) {
                   <input type="checkbox" checked={!!g.checked} onChange={() => check(g)} />
                   <span style={{ flex: 1 }}>{g.item} {g.qty && `(${g.qty})`}</span>
                   <button className="btn small ghost" onClick={() => claim(g)}>{g.claimedBy || 'Claim'}</button>
+                  <button className="btn small danger" onClick={() => remove(g.id)}>×</button>
                 </div>
               ))}
             </div>
@@ -161,7 +170,11 @@ function Groceries({ groceries, identity }) {
       </div>
       <div className="card">
         <h3>+ Add item</h3>
-        <div className="field"><label>Category</label><select value={category} onChange={e => setCategory(e.target.value)}>{CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></div>
+        <div className="field">
+          <label>Category</label>
+          <input type="text" list="grocery-categories" value={category} onChange={e => setCategory(e.target.value)} />
+          <datalist id="grocery-categories">{allCategories.map(c => <option key={c} value={c} />)}</datalist>
+        </div>
         <div className="row">
           <input type="text" placeholder="Item" value={item} onChange={e => setItem(e.target.value)} />
           <input type="text" placeholder="Qty" value={qty} onChange={e => setQty(e.target.value)} style={{ width: 90 }} />

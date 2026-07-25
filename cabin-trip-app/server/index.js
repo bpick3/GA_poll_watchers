@@ -7,6 +7,7 @@ import { seedIfEmpty } from './seed.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 seedIfEmpty();
+reconcileAllPayments();
 
 const app = express();
 app.use(express.json());
@@ -25,6 +26,44 @@ function requireOrganizer(req, res, next) {
   next();
 }
 
+// The payment plan (installment labels/dates/amounts) is set once at setup and
+// reused for anyone added afterward, so money totals stay correct as the
+// roster changes. Deploys that predate the paymentPlan setting fall back to
+// inferring it from whatever payment rows already exist.
+function getPaymentPlan() {
+  const raw = db.prepare("SELECT value FROM settings WHERE key='paymentPlan'").get()?.value;
+  if (raw) {
+    try { return JSON.parse(raw); } catch { /* fall through to inference */ }
+  }
+  const rows = db.prepare('SELECT DISTINCT dueLabel, dueDate, amount FROM payments').all();
+  const plan = rows.map(r => ({ label: r.dueLabel, date: r.dueDate, amount: r.amount }));
+  if (plan.length) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('paymentPlan', ?) ON CONFLICT(key) DO UPDATE SET value=excluded.value")
+      .run(JSON.stringify(plan));
+  }
+  return plan;
+}
+
+function ensurePayments(personId) {
+  const plan = getPaymentPlan();
+  if (!plan.length) return;
+  const existing = db.prepare('SELECT dueLabel, dueDate FROM payments WHERE personId=?').all(personId);
+  const has = (label, date) => existing.some(e => e.dueLabel === label && e.dueDate === date);
+  const insert = db.prepare("INSERT INTO payments (id, personId, dueLabel, dueDate, amount, status) VALUES (?,?,?,?,?,'not_sent')");
+  for (const inst of plan) {
+    if (inst.label && inst.date && inst.amount && !has(inst.label, inst.date)) {
+      insert.run(uuid(), personId, inst.label, inst.date, Number(inst.amount));
+    }
+  }
+}
+
+// Self-heal any deploy where the roster grew after setup but payment rows
+// weren't backfilled (e.g. before this fix existed).
+function reconcileAllPayments() {
+  const people = db.prepare('SELECT id FROM people').all();
+  for (const p of people) ensurePayments(p.id);
+}
+
 const api = express.Router();
 
 // ---------- people / settings ----------
@@ -36,6 +75,7 @@ api.post('/people', (req, res) => {
   if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
   const id = uuid();
   db.prepare('INSERT INTO people (id, name, status, isOrganizer, isGuestOfHonor) VALUES (?,?,?,0,0)').run(id, name.trim(), 'confirmed');
+  ensurePayments(id);
   res.json(db.prepare('SELECT * FROM people WHERE id=?').get(id));
 });
 api.patch('/people/:id', (req, res) => {
@@ -46,6 +86,7 @@ api.patch('/people/:id', (req, res) => {
   const isOrganizer = req.body.isOrganizer !== undefined ? (req.body.isOrganizer ? 1 : 0) : p.isOrganizer;
   const isGuestOfHonor = req.body.isGuestOfHonor !== undefined ? (req.body.isGuestOfHonor ? 1 : 0) : p.isGuestOfHonor;
   db.prepare('UPDATE people SET name=?, status=?, isOrganizer=?, isGuestOfHonor=? WHERE id=?').run(name, status, isOrganizer, isGuestOfHonor, req.params.id);
+  ensurePayments(req.params.id);
   res.json(db.prepare('SELECT * FROM people WHERE id=?').get(req.params.id));
 });
 api.delete('/people/:id', (req, res) => {
@@ -139,6 +180,8 @@ api.post('/setup', (req, res) => {
         insertPayment.run(uuid(), person.id, inst.label, inst.date, Number(inst.amount));
       }
     }
+    // remember the plan so payments can be generated for people added later
+    setSetting.run('paymentPlan', JSON.stringify(installments));
 
     // default birthday checklist for anyone flagged as a guest of honor
     const insertBday = db.prepare('INSERT INTO birthday_checklist (id, forPerson, item, done) VALUES (?,?,?,0)');
@@ -250,6 +293,19 @@ api.post('/movie-nominations/:id/vote', (req, res) => {
   res.json({ ok: true });
 });
 
+api.post('/hottub-slots', (req, res) => {
+  const { dayId, startTime, label } = req.body;
+  if (!dayId || !startTime) return res.status(400).json({ error: 'dayId and startTime required' });
+  const id = uuid();
+  db.prepare('INSERT INTO hottub_slots (id, dayId, startTime, label) VALUES (?,?,?,?)')
+    .run(id, dayId, startTime, label || `${startTime} - 45 min`);
+  res.json(db.prepare('SELECT * FROM hottub_slots WHERE id=?').get(id));
+});
+api.delete('/hottub-slots/:id', (req, res) => {
+  db.prepare('DELETE FROM hottub_slots WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM hottub_signups WHERE slotId=?').run(req.params.id);
+  res.json({ ok: true });
+});
 api.post('/hottub-slots/:id/toggle', (req, res) => {
   const personId = req.body.personId || req.person?.id;
   if (!personId) return res.status(400).json({ error: 'personId required' });
@@ -392,6 +448,20 @@ api.get('/committees', (req, res) => {
     notes: notes.filter(n => n.committeeId === c.id),
   })));
 });
+api.post('/committees', (req, res) => {
+  const { name, emoji } = req.body;
+  if (!name || !name.trim()) return res.status(400).json({ error: 'name required' });
+  const id = uuid();
+  db.prepare('INSERT INTO committees (id, name, emoji) VALUES (?,?,?)').run(id, name.trim(), emoji || '🗂️');
+  res.json({ id });
+});
+api.delete('/committees/:id', (req, res) => {
+  db.prepare('DELETE FROM committees WHERE id=?').run(req.params.id);
+  db.prepare('DELETE FROM committee_members WHERE committeeId=?').run(req.params.id);
+  db.prepare('DELETE FROM committee_tasks WHERE committeeId=?').run(req.params.id);
+  db.prepare('DELETE FROM committee_notes WHERE committeeId=?').run(req.params.id);
+  res.json({ ok: true });
+});
 api.post('/committees/:id/join', (req, res) => {
   const personId = req.body.personId || req.person?.id;
   db.prepare('INSERT OR IGNORE INTO committee_members (committeeId, personId) VALUES (?,?)').run(req.params.id, personId);
@@ -435,6 +505,10 @@ api.post('/games-bring', (req, res) => {
 api.patch('/games-bring/:id', (req, res) => {
   db.prepare('UPDATE games_bring SET claimedBy=? WHERE id=?').run(req.body.claimedBy, req.params.id);
   res.json(db.prepare('SELECT * FROM games_bring WHERE id=?').get(req.params.id));
+});
+api.delete('/games-bring/:id', (req, res) => {
+  db.prepare('DELETE FROM games_bring WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 api.get('/tournaments', (req, res) => {
@@ -480,8 +554,19 @@ api.post('/tournaments/:id/advance', (req, res) => {
 });
 
 api.get('/birthday-checklist', (req, res) => res.json(db.prepare('SELECT * FROM birthday_checklist').all()));
+api.post('/birthday-checklist', (req, res) => {
+  const { forPerson, item } = req.body;
+  if (!forPerson || !item || !item.trim()) return res.status(400).json({ error: 'forPerson and item required' });
+  const id = uuid();
+  db.prepare('INSERT INTO birthday_checklist (id, forPerson, item, done) VALUES (?,?,?,0)').run(id, forPerson, item.trim());
+  res.json(db.prepare('SELECT * FROM birthday_checklist WHERE id=?').get(id));
+});
 api.patch('/birthday-checklist/:id', (req, res) => {
   db.prepare('UPDATE birthday_checklist SET done=? WHERE id=?').run(req.body.done ? 1 : 0, req.params.id);
+  res.json({ ok: true });
+});
+api.delete('/birthday-checklist/:id', (req, res) => {
+  db.prepare('DELETE FROM birthday_checklist WHERE id=?').run(req.params.id);
   res.json({ ok: true });
 });
 
@@ -586,11 +671,22 @@ api.post('/packing/:id/toggle', (req, res) => {
 });
 
 api.get('/cleanup-tasks', (req, res) => res.json(db.prepare('SELECT * FROM cleanup_tasks').all()));
+api.post('/cleanup-tasks', (req, res) => {
+  const { task } = req.body;
+  if (!task || !task.trim()) return res.status(400).json({ error: 'task required' });
+  const id = uuid();
+  db.prepare('INSERT INTO cleanup_tasks (id, task, claimedBy, done) VALUES (?,?,NULL,0)').run(id, task.trim());
+  res.json(db.prepare('SELECT * FROM cleanup_tasks WHERE id=?').get(id));
+});
 api.patch('/cleanup-tasks/:id', (req, res) => {
   const t = db.prepare('SELECT * FROM cleanup_tasks WHERE id=?').get(req.params.id);
   const merged = { ...t, ...req.body };
   db.prepare('UPDATE cleanup_tasks SET claimedBy=?, done=? WHERE id=?').run(merged.claimedBy, merged.done ? 1 : 0, req.params.id);
   res.json(db.prepare('SELECT * FROM cleanup_tasks WHERE id=?').get(req.params.id));
+});
+api.delete('/cleanup-tasks/:id', (req, res) => {
+  db.prepare('DELETE FROM cleanup_tasks WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 app.use('/api', api);

@@ -212,12 +212,23 @@ function Packing({ packing }) {
 function Cleanup({ cleanup }) {
   const list = cleanup.data || [];
   const identity = useIdentity();
+  const [task, setTask] = useState('');
   async function claim(t) {
     await api.patch(`/cleanup-tasks/${t.id}`, { claimedBy: t.claimedBy === identity.personName ? null : identity.personName, done: t.done });
     cleanup.reload();
   }
   async function toggleDone(t) {
     await api.patch(`/cleanup-tasks/${t.id}`, { claimedBy: t.claimedBy, done: !t.done });
+    cleanup.reload();
+  }
+  async function remove(id) {
+    await api.del(`/cleanup-tasks/${id}`);
+    cleanup.reload();
+  }
+  async function add() {
+    if (!task.trim()) return;
+    await api.post('/cleanup-tasks', { task: task.trim() });
+    setTask('');
     cleanup.reload();
   }
   return (
@@ -228,8 +239,13 @@ function Cleanup({ cleanup }) {
           <input type="checkbox" checked={!!t.done} onChange={() => toggleDone(t)} />
           <span style={{ flex: 1 }}>{t.task}</span>
           <button className="btn small ghost" onClick={() => claim(t)}>{t.claimedBy || 'Claim'}</button>
+          <button className="btn small danger" onClick={() => remove(t.id)}>×</button>
         </div>
       ))}
+      <div className="row" style={{ marginTop: 10 }}>
+        <input type="text" placeholder="Add a task" value={task} onChange={e => setTask(e.target.value)} />
+        <button className="btn small" onClick={add}>Add</button>
+      </div>
     </div>
   );
 }

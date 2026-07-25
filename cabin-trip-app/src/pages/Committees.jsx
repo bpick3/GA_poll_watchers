@@ -9,7 +9,20 @@ export default function Committees({ people }) {
   const committees = usePoll('/committees', 8000);
   const peopleList = people.data || [];
   const list = committees.data || [];
+  const [newName, setNewName] = useState('');
+  const [newEmoji, setNewEmoji] = useState('🗂️');
 
+  async function addCommittee() {
+    if (!newName.trim()) return;
+    await api.post('/committees', { name: newName.trim(), emoji: newEmoji.trim() || '🗂️' });
+    setNewName(''); setNewEmoji('🗂️');
+    committees.reload();
+  }
+  async function removeCommittee(c) {
+    if (!confirm(`Delete "${c.name}" committee? This removes its tasks and notes too.`)) return;
+    await api.del(`/committees/${c.id}`);
+    committees.reload();
+  }
   async function join(c) {
     const inIt = c.members.includes(identity.personId);
     await api.post(`/committees/${c.id}/${inIt ? 'leave' : 'join'}`, {});
@@ -38,9 +51,12 @@ export default function Committees({ people }) {
         <div key={c.id} className="card">
           <div className="spread">
             <h3>{c.emoji} {c.name}</h3>
-            <button className={`btn small ${c.members.includes(identity.personId) ? '' : 'ghost'}`} onClick={() => join(c)}>
-              {c.members.includes(identity.personId) ? 'Leave' : 'Join'}
-            </button>
+            <span className="row">
+              <button className={`btn small ${c.members.includes(identity.personId) ? '' : 'ghost'}`} onClick={() => join(c)}>
+                {c.members.includes(identity.personId) ? 'Leave' : 'Join'}
+              </button>
+              <button className="btn small danger" onClick={() => removeCommittee(c)}>×</button>
+            </span>
           </div>
           <div className="small-muted">Members: {c.members.map(id => nameOf(peopleList, id)).join(', ') || 'none yet'}</div>
 
@@ -66,6 +82,15 @@ export default function Committees({ people }) {
           <button className="btn small ghost" onClick={() => addNote(c)}>+ Note</button>
         </div>
       ))}
+
+      <div className="card">
+        <h3>+ New Committee</h3>
+        <div className="row">
+          <input type="text" placeholder="Emoji" style={{ width: 60 }} value={newEmoji} onChange={e => setNewEmoji(e.target.value)} />
+          <input type="text" placeholder="Committee name" value={newName} onChange={e => setNewName(e.target.value)} />
+        </div>
+        <button className="btn small" style={{ marginTop: 8 }} onClick={addCommittee}>Add committee</button>
+      </div>
     </div>
   );
 }
