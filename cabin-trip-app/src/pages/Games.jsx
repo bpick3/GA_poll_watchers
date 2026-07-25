@@ -179,6 +179,17 @@ function Tournament({ tournaments, people }) {
     tournaments.reload();
   }
 
+  function pickWinner(match, roundIdx, name) {
+    const isLastRound = roundIdx === t.bracket.rounds.length - 1;
+    const alreadyDecided = !!match.winner;
+    const changing = alreadyDecided && match.winner !== name;
+    const clearing = alreadyDecided && match.winner === name;
+    if ((changing || clearing) && !isLastRound) {
+      if (!confirm('This match already fed into a later round. Changing it will clear that round\'s picks. Continue?')) return;
+    }
+    advance(match.id, clearing ? null : name);
+  }
+
   function toggleSelected(id) {
     setSelected(sel => sel.includes(id) ? sel.filter(x => x !== id) : [...sel, id]);
   }
@@ -187,6 +198,12 @@ function Tournament({ tournaments, people }) {
     if (selected.length < 2) return alert('Pick at least 2 players.');
     const players = people.filter(p => selected.includes(p.id)).map(p => p.name);
     await api.post('/tournaments', { name, players });
+    tournaments.reload();
+  }
+
+  async function removeTournament() {
+    if (!confirm(`Delete "${t.name}"? This can't be undone.`)) return;
+    await api.del(`/tournaments/${t.id}`);
     tournaments.reload();
   }
 
@@ -210,7 +227,11 @@ function Tournament({ tournaments, people }) {
 
   return (
     <div className="card">
-      <h3>🏓 {t.name}</h3>
+      <div className="spread">
+        <h3>🏓 {t.name}</h3>
+        <button className="btn small danger" onClick={removeTournament}>Delete</button>
+      </div>
+      <div className="small-muted">Tap a winner again to un-pick it. Changing a decided match clears any later round it fed into.</div>
       {t.championId && <div className="chip-row"><span className="chip amber">👑 Champion: {t.championId}</span></div>}
       {t.bracket.rounds.map((round, ri) => (
         <div key={ri} className="bracket-round">
@@ -218,8 +239,8 @@ function Tournament({ tournaments, people }) {
           {round.map(m => (
             <div key={m.id} className="bracket-match">
               <div className="small-muted">{m.p1} vs {m.p2 || 'BYE'}</div>
-              {m.p1 && <button className={m.winner === m.p1 ? 'winner' : ''} onClick={() => advance(m.id, m.p1)}>{m.p1}{m.winner === m.p1 ? ' 👑' : ''}</button>}
-              {m.p2 && <button className={m.winner === m.p2 ? 'winner' : ''} onClick={() => advance(m.id, m.p2)}>{m.p2}{m.winner === m.p2 ? ' 👑' : ''}</button>}
+              {m.p1 && <button className={m.winner === m.p1 ? 'winner' : ''} onClick={() => pickWinner(m, ri, m.p1)}>{m.p1}{m.winner === m.p1 ? ' 👑' : ''}</button>}
+              {m.p2 && <button className={m.winner === m.p2 ? 'winner' : ''} onClick={() => pickWinner(m, ri, m.p2)}>{m.p2}{m.winner === m.p2 ? ' 👑' : ''}</button>}
             </div>
           ))}
         </div>

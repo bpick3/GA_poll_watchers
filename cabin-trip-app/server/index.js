@@ -532,26 +532,36 @@ api.post('/tournaments/:id/advance', (req, res) => {
   const t = db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id);
   if (!t) return res.status(404).json({ error: 'not found' });
   const bracket = JSON.parse(t.bracketJson);
-  const { matchId, winner } = req.body;
+  const { matchId, winner } = req.body; // winner may be null/omitted to un-pick a match
   const roundIdx = bracket.rounds.findIndex(r => r.some(m => m.id === matchId));
+  if (roundIdx === -1) return res.status(404).json({ error: 'match not found' });
   const match = bracket.rounds[roundIdx].find(m => m.id === matchId);
-  match.winner = winner;
+  match.winner = winner || null;
+
+  // a pick (or un-pick) invalidates any later rounds derived from it — rebuild forward
+  bracket.rounds = bracket.rounds.slice(0, roundIdx + 1);
+  let championId = null;
   const currentRound = bracket.rounds[roundIdx];
   const allDone = currentRound.every(m => m.winner);
-  let championId = t.championId;
   if (allDone) {
     if (currentRound.length === 1) {
-      championId = winner;
-    } else if (!bracket.rounds[roundIdx + 1]) {
+      championId = currentRound[0].winner;
+    } else {
       const nextRound = [];
       for (let i = 0; i < currentRound.length; i += 2) {
-        nextRound.push({ id: uuid(), p1: currentRound[i].winner, p2: currentRound[i + 1]?.winner || null, winner: currentRound[i + 1] ? null : currentRound[i].winner });
+        const p1 = currentRound[i].winner;
+        const p2 = currentRound[i + 1] ? currentRound[i + 1].winner : null;
+        nextRound.push({ id: uuid(), p1, p2, winner: p2 ? null : p1 });
       }
       bracket.rounds.push(nextRound);
     }
   }
   db.prepare('UPDATE tournaments SET bracketJson=?, championId=? WHERE id=?').run(JSON.stringify(bracket), championId, req.params.id);
-  res.json({ ...db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id), bracket: JSON.parse(bracket ? JSON.stringify(bracket) : '{}') });
+  res.json({ ...db.prepare('SELECT * FROM tournaments WHERE id=?').get(req.params.id), bracket });
+});
+api.delete('/tournaments/:id', (req, res) => {
+  db.prepare('DELETE FROM tournaments WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 api.get('/birthday-checklist', (req, res) => res.json(db.prepare('SELECT * FROM birthday_checklist').all()));
