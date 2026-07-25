@@ -229,8 +229,18 @@ function Tournament({ tournaments, people, identity }) {
   const [mode, setMode] = useState('individual');
   const [selected, setSelected] = useState([]);
 
+  const me = people.find(p => p.id === identity.personId);
+  const isOrganizer = !!me?.isOrganizer;
+
   async function vote(matchId, choice) {
     await api.post(`/tournaments/${t.id}/vote`, { matchId, choice });
+    tournaments.reload();
+  }
+
+  async function houseRuling(match, roundIdx, winnerName) {
+    const isLastRound = t && roundIdx === t.bracket.rounds.length - 1;
+    if (!isLastRound && !confirm(`House ruling: ${winnerName} won. This clears any later round already built off this match. Continue?`)) return;
+    await api.post(`/tournaments/${t.id}/advance`, { matchId: match.id, winner: winnerName });
     tournaments.reload();
   }
 
@@ -310,6 +320,13 @@ function Tournament({ tournaments, people, identity }) {
                       {m.p2} — {p2Votes} vote{p2Votes === 1 ? '' : 's'}{m.winner === m.p2 ? ' 👑' : ''}{myVote === 'p2' ? ' ✓' : ''}
                     </button>
                     {p1Votes > 0 && p1Votes === p2Votes && <div className="small-muted">Tied — needs one more vote to break the tie.</div>}
+                    {isOrganizer && (
+                      <div className="row" style={{ marginTop: 6 }}>
+                        <span className="small-muted">🔨 House Ruling:</span>
+                        <button className="btn small ghost" onClick={() => houseRuling(m, ri, m.p1)}>{m.p1}</button>
+                        <button className="btn small ghost" onClick={() => houseRuling(m, ri, m.p2)}>{m.p2}</button>
+                      </div>
+                    )}
                   </>
                 )}
               </div>
