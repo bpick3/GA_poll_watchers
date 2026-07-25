@@ -49,6 +49,10 @@ function MealGrid({ days, meals, people }) {
     await api.patch(`/meals/${meal.id}`, { [field]: next.join(',') });
     meals.reload();
   }
+  async function toggleSkip(meal) {
+    await api.patch(`/meals/${meal.id}`, { skipped: meal.skipped ? 0 : 1 });
+    meals.reload();
+  }
 
   return (
     <div className="card" style={{ overflowX: 'auto' }}>
@@ -66,6 +70,14 @@ function MealGrid({ days, meals, people }) {
               {days.map(d => {
                 const meal = mealList.find(m => m.dayId === d.id && m.mealType === mt);
                 if (!meal) return <td key={d.id}>—</td>;
+                if (meal.skipped) {
+                  return (
+                    <td key={d.id} style={{ opacity: 0.55 }}>
+                      <div className="small-muted">Not needed this trip</div>
+                      <button className="btn small ghost" style={{ marginTop: 4 }} onClick={() => toggleSkip(meal)}>Undo</button>
+                    </td>
+                  );
+                }
                 const needsOwner = meal.plan && !meal.cooks;
                 return (
                   <td key={d.id} style={needsOwner ? { background: 'rgba(255,184,77,0.25)', borderRadius: 8 } : {}}>
@@ -78,6 +90,7 @@ function MealGrid({ days, meals, people }) {
                       <button className="btn small ghost" onClick={() => claim(meal, 'cooks')}>Cook</button>
                       <button className="btn small ghost" onClick={() => claim(meal, 'cleanup')}>Cleanup</button>
                     </div>
+                    <button className="btn small ghost" style={{ marginTop: 4 }} onClick={() => toggleSkip(meal)}>Not needed</button>
                   </td>
                 );
               })}

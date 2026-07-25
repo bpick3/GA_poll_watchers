@@ -31,7 +31,7 @@ export default function Home({ people, settings, setTab }) {
   const myPayments = (payments.data || []).filter(p => p.personId === identity.personId && p.status !== 'confirmed');
 
   const unownedBlocks = dayList.flatMap(d => (d.blocks || []).map(b => ({ ...b, dayLabel: d.label }))).filter(b => !b.ownerId && !b.ownerText);
-  const unownedMeals = mealList.filter(m => m.plan && !m.cooks);
+  const unownedMeals = mealList.filter(m => m.plan && !m.cooks && !m.skipped);
 
   const money = moneySummary.data;
   const pct = money && money.totalNeeded ? Math.min(100, Math.round((money.collected / money.totalNeeded) * 100)) : 0;

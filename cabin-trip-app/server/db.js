@@ -236,4 +236,11 @@ CREATE TABLE IF NOT EXISTS cleanup_tasks (
 );
 `);
 
+// lightweight migration: add columns that didn't exist in earlier schema
+// versions without wiping out already-deployed data
+const mealColumns = db.prepare("PRAGMA table_info(meals)").all().map(c => c.name);
+if (!mealColumns.includes('skipped')) {
+  db.exec('ALTER TABLE meals ADD COLUMN skipped INTEGER NOT NULL DEFAULT 0');
+}
+
 export { isNew };

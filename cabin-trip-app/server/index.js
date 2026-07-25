@@ -326,7 +326,8 @@ api.patch('/meals/:id', (req, res) => {
   const m = db.prepare('SELECT * FROM meals WHERE id=?').get(req.params.id);
   if (!m) return res.status(404).json({ error: 'not found' });
   const merged = { ...m, ...req.body };
-  db.prepare('UPDATE meals SET plan=?, cooks=?, cleanup=? WHERE id=?').run(merged.plan, merged.cooks, merged.cleanup, req.params.id);
+  db.prepare('UPDATE meals SET plan=?, cooks=?, cleanup=?, skipped=? WHERE id=?')
+    .run(merged.plan, merged.cooks, merged.cleanup, merged.skipped ? 1 : 0, req.params.id);
   res.json(db.prepare('SELECT * FROM meals WHERE id=?').get(req.params.id));
 });
 
