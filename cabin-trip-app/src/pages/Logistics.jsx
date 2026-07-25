@@ -96,9 +96,11 @@ function Rooms({ rooms, people }) {
 
   return (
     <div>
-      {list.map(r => (
-        <div key={r.id} className="card room-card">
-          <span className="cap">{r.occupants.length}/{r.capacity}</span>
+      {list.map(r => {
+        const isFull = r.occupants.length >= r.capacity;
+        return (
+        <div key={r.id} className={`card room-card ${isFull ? 'room-full' : ''}`}>
+          <span className={`cap ${isFull ? 'cap-full' : ''}`}>{isFull ? '✅ Full' : `${r.occupants.length}/${r.capacity}`}</span>
           <h3>{r.name}</h3>
           <div className="small-muted">{r.bed} · {r.details}</div>
           <button className="btn small ghost" onClick={() => removeRoom(r.id)}>Remove room</button>
@@ -115,7 +117,8 @@ function Rooms({ rooms, people }) {
             </select>
           )}
         </div>
-      ))}
+        );
+      })}
       <div className="card">
         <h3>+ Add a room</h3>
         <div className="field"><label>Name</label><input type="text" value={name} onChange={e => setName(e.target.value)} /></div>

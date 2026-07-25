@@ -308,6 +308,17 @@ table.grid th { color: var(--wood); font-family: 'Fredoka', sans-serif; }
 
 .room-card { position: relative; }
 .room-card .cap { position: absolute; top: 12px; right: 14px; font-size: 0.72rem; font-weight: 700; color: var(--wood); }
+.room-card.room-full {
+  background-color: var(--card);
+  background-image: linear-gradient(rgba(63, 154, 92, 0.12), rgba(63, 154, 92, 0.12));
+  border: 1.5px solid rgba(63, 154, 92, 0.55);
+}
+.cap.cap-full {
+  background: #3f9a5c;
+  color: white;
+  padding: 3px 9px;
+  border-radius: 999px;
+}
 
 .hero-emoji { font-size: 1.6rem; }
 
