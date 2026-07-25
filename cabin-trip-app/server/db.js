@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import fs from 'node:fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dbPath = path.join(__dirname, 'data.db');
+// DB_PATH lets a deploy point the database at a mounted volume (e.g. Railway)
+// that lives outside the code directory — a volume mounted directly on this
+// folder would otherwise hide the server code baked into the build.
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'data.db');
+fs.mkdirSync(path.dirname(dbPath), { recursive: true });
 const isNew = !fs.existsSync(dbPath);
 
 export const db = new Database(dbPath);
