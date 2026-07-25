@@ -312,7 +312,15 @@ table.grid th { color: var(--wood); font-family: 'Fredoka', sans-serif; }
   background-color: var(--card);
   background-image: linear-gradient(rgba(63, 154, 92, 0.12), rgba(63, 154, 92, 0.12));
   border: 1.5px solid rgba(63, 154, 92, 0.55);
+  /* this card keeps a light background in both themes, so force dark text
+     regardless of light/dark mode instead of inheriting the pale dark-mode
+     text color that's unreadable against it */
+  color: var(--ink);
 }
+.room-card.room-full h3 { color: var(--ink); }
+.room-card.room-full .small-muted { color: var(--wood); opacity: 0.85; }
+.room-card.room-full .list-item { border-color: rgba(63, 154, 92, 0.3); }
+.room-card.room-full .btn.ghost { background: rgba(255,255,255,0.7); color: var(--ink); border-color: rgba(63,154,92,0.4); }
 .cap.cap-full {
   background: #3f9a5c;
   color: white;
