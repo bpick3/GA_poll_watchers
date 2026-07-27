@@ -9,12 +9,14 @@ export default function Home({ people, settings, setTab }) {
   const moneySummary = usePoll('/money-summary', 15000);
   const payments = usePoll('/payments', 15000);
   const groceries = usePoll('/groceries', 15000);
+  const cleanup = usePoll('/cleanup-tasks', 15000);
 
   const s = settings.data || {};
   const dayList = days.data || [];
   const mealList = meals.data || [];
   const peopleList = people.data || [];
   const groceryList = groceries.data || [];
+  const cleanupList = cleanup.data || [];
 
   const todayStr = new Date().toISOString().slice(0, 10);
   let activeDay = dayList.find(d => d.date === todayStr);
@@ -25,13 +27,18 @@ export default function Home({ people, settings, setTab }) {
     previewLabel = upcoming ? 'Next up' : 'Trip wrapped — see you next year!';
   }
 
-  const myBlocks = dayList.flatMap(d => d.blocks || []).filter(b => b.ownerId === identity.personId);
-  const myMeals = mealList.filter(m => (m.cooks || '').split(',').includes(identity.personId) || (m.cleanup || '').split(',').includes(identity.personId));
-  const myGroceries = groceryList.filter(g => g.claimedBy === identity.personId);
+  const dayLabelOf = (dayId) => (dayList.find(d => d.id === dayId) || {}).label || '';
+
+  const myBlocks = dayList.flatMap(d => (d.blocks || []).map(b => ({ ...b, dayLabel: d.label }))).filter(b => b.ownerId === identity.personId);
+  const myMeals = mealList
+    .filter(m => (m.cooks || '').split(',').includes(identity.personId) || (m.cleanup || '').split(',').includes(identity.personId))
+    .map(m => ({ ...m, dayLabel: dayLabelOf(m.dayId) }));
+  const myGroceries = groceryList.filter(g => g.claimedBy === identity.personName);
   const myPayments = (payments.data || []).filter(p => p.personId === identity.personId && p.status !== 'confirmed');
+  const myCleanup = cleanupList.filter(t => t.claimedBy === identity.personName && !t.done);
 
   const unownedBlocks = dayList.flatMap(d => (d.blocks || []).map(b => ({ ...b, dayLabel: d.label }))).filter(b => !b.ownerId && !b.ownerText);
-  const unownedMeals = mealList.filter(m => m.plan && !m.cooks && !m.skipped);
+  const unownedMeals = mealList.filter(m => m.plan && !m.cooks && !m.skipped).map(m => ({ ...m, dayLabel: dayLabelOf(m.dayId) }));
 
   const money = moneySummary.data;
   const pct = money && money.totalNeeded ? Math.min(100, Math.round((money.collected / money.totalNeeded) * 100)) : 0;
@@ -85,20 +92,21 @@ export default function Home({ people, settings, setTab }) {
 
       <div className="card">
         <h3>✅ My Responsibilities</h3>
-        {myBlocks.length === 0 && myMeals.length === 0 && myGroceries.length === 0 && myPayments.length === 0 && (
+        {myBlocks.length === 0 && myMeals.length === 0 && myGroceries.length === 0 && myPayments.length === 0 && myCleanup.length === 0 && (
           <p className="small-muted">Nothing claimed yet — go grab something on Schedule or Food!</p>
         )}
-        {myBlocks.map(b => <div key={b.id} className="list-item">🔥 Leading: {b.title}</div>)}
-        {myMeals.map(m => <div key={m.id} className="list-item">🍽️ Meal: {m.mealType} — {m.plan}</div>)}
+        {myBlocks.map(b => <div key={b.id} className="list-item">🔥 {b.dayLabel}: Leading {b.title}</div>)}
+        {myMeals.map(m => <div key={m.id} className="list-item">🍽️ {m.dayLabel} {m.mealType}: {m.plan}</div>)}
         {myGroceries.map(g => <div key={g.id} className="list-item">🛒 Grocery: {g.item} ({g.qty})</div>)}
         {myPayments.map(p => <div key={p.id} className="list-item">💵 {p.dueLabel} — ${p.amount.toFixed(2)} due {p.dueDate} ({p.status})</div>)}
+        {myCleanup.map(t => <div key={t.id} className="list-item">🧹 Cleanup: {t.task}</div>)}
       </div>
 
       {(unownedBlocks.length > 0 || unownedMeals.length > 0) && (
         <div className="card amber-glow">
           <h3>🙋 Needs an Owner</h3>
           {unownedBlocks.map(b => <div key={b.id} className="list-item"><span>{b.dayLabel}: {b.title}</span><span className="needs-owner">unclaimed</span></div>)}
-          {unownedMeals.map(m => <div key={m.id} className="list-item"><span>{m.mealType}: {m.plan}</span><span className="needs-owner">needs a cook</span></div>)}
+          {unownedMeals.map(m => <div key={m.id} className="list-item"><span>{m.dayLabel} {m.mealType}: {m.plan}</span><span className="needs-owner">needs a cook</span></div>)}
         </div>
       )}
     </div>
