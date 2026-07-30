@@ -5,8 +5,8 @@ import Logistics from './Logistics.jsx';
 import Announcements from './Announcements.jsx';
 import Settings from './Settings.jsx';
 
-export default function More({ people, settings }) {
-  const [sub, setSub] = useState('committees');
+export default function More({ people, settings, initialSub }) {
+  const [sub, setSub] = useState(initialSub || 'committees');
   return (
     <div>
       <div className="subnav">

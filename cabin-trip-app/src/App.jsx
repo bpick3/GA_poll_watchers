@@ -21,6 +21,13 @@ const TABS = [
 export default function App() {
   const identity = useIdentityState();
   const [tab, setTab] = useState('home');
+  const [moreSub, setMoreSub] = useState(null);
+
+  function openMore(subTab) {
+    setMoreSub(subTab);
+    setTab('more');
+  }
+
   const people = usePoll('/people', 10000);
   const settings = usePoll('/settings', 15000);
   const s = settings.data || {};
@@ -61,15 +68,19 @@ export default function App() {
           <button className="whoami" onClick={() => identity.clearPerson()}>{identity.personName} ⏷</button>
         </header>
         <div className="page">
-          {tab === 'home' && <Home people={people} settings={settings} setTab={setTab} />}
+          {tab === 'home' && <Home people={people} settings={settings} setTab={setTab} openMore={openMore} />}
           {tab === 'schedule' && <Schedule people={people} />}
           {tab === 'food' && <Food people={people} />}
           {tab === 'money' && <Money people={people} settings={settings} />}
-          {tab === 'more' && <More people={people} settings={settings} />}
+          {tab === 'more' && <More people={people} settings={settings} initialSub={moreSub} />}
         </div>
         <nav className="tabs-bottom">
           {TABS.map(t => (
-            <button key={t.key} className={`tab-btn ${tab === t.key ? 'active' : ''}`} onClick={() => setTab(t.key)}>
+            <button
+              key={t.key}
+              className={`tab-btn ${tab === t.key ? 'active' : ''}`}
+              onClick={() => { if (t.key === 'more') setMoreSub(null); setTab(t.key); }}
+            >
               <span className="icon">{t.icon}</span>
               <span>{t.label}</span>
             </button>

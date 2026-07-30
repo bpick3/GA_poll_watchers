@@ -2,7 +2,7 @@ import { useIdentity } from '../identity';
 import { usePoll } from '../usePoll';
 import { countdownLabel, nameOf, csvToNames } from '../utils';
 
-export default function Home({ people, settings, setTab }) {
+export default function Home({ people, settings, setTab, openMore }) {
   const identity = useIdentity();
   const days = usePoll('/days', 10000);
   const meals = usePoll('/meals', 10000);
@@ -10,6 +10,7 @@ export default function Home({ people, settings, setTab }) {
   const payments = usePoll('/payments', 15000);
   const groceries = usePoll('/groceries', 15000);
   const cleanup = usePoll('/cleanup-tasks', 15000);
+  const announcements = usePoll('/announcements', 10000);
 
   const s = settings.data || {};
   const dayList = days.data || [];
@@ -17,6 +18,7 @@ export default function Home({ people, settings, setTab }) {
   const peopleList = people.data || [];
   const groceryList = groceries.data || [];
   const cleanupList = cleanup.data || [];
+  const announcementList = announcements.data || [];
 
   const todayStr = new Date().toISOString().slice(0, 10);
   let activeDay = dayList.find(d => d.date === todayStr);
@@ -78,6 +80,23 @@ export default function Home({ people, settings, setTab }) {
           </>
         ) : <p className="small-muted">Loading…</p>}
       </div>
+
+      {announcementList.length > 0 && (
+        <div className="card">
+          <div className="spread">
+            <h3>📢 Recent Announcements</h3>
+          </div>
+          {announcementList.slice(0, 3).map(a => (
+            <div key={a.id} className="list-item" style={{ alignItems: 'flex-start' }}>
+              <span>
+                <span className="small-muted">{nameOf(peopleList, a.personId) || 'Someone'} · {new Date(a.ts).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                <div>{a.text}</div>
+              </span>
+            </div>
+          ))}
+          <button className="btn small ghost" onClick={() => openMore && openMore('announce')}>See all / post one →</button>
+        </div>
+      )}
 
       <div className="card">
         <h3>💵 Payment Progress</h3>
