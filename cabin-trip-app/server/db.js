@@ -198,6 +198,13 @@ CREATE TABLE IF NOT EXISTS surprise_ideas (
   ts TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS announcements (
+  id TEXT PRIMARY KEY,
+  personId TEXT,
+  text TEXT NOT NULL,
+  ts TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS rooms (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,

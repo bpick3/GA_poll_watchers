@@ -663,6 +663,19 @@ api.post('/surprise-ideas', (req, res) => {
   res.json(db.prepare('SELECT * FROM surprise_ideas WHERE id=?').get(id));
 });
 
+api.get('/announcements', (req, res) => res.json(db.prepare('SELECT * FROM announcements ORDER BY ts DESC').all()));
+api.post('/announcements', (req, res) => {
+  const personId = req.body.personId || req.person?.id;
+  if (!req.body.text || !req.body.text.trim()) return res.status(400).json({ error: 'text required' });
+  const id = uuid();
+  db.prepare('INSERT INTO announcements (id, personId, text, ts) VALUES (?,?,?,?)').run(id, personId || null, req.body.text.trim(), new Date().toISOString());
+  res.json(db.prepare('SELECT * FROM announcements WHERE id=?').get(id));
+});
+api.delete('/announcements/:id', (req, res) => {
+  db.prepare('DELETE FROM announcements WHERE id=?').run(req.params.id);
+  res.json({ ok: true });
+});
+
 // ---------- logistics ----------
 api.get('/rooms', (req, res) => {
   const rooms = db.prepare('SELECT * FROM rooms').all();

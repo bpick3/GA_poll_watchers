@@ -27,3 +27,28 @@ export function csvToNames(csv, people) {
   if (!csv) return [];
   return csv.split(',').filter(Boolean).map(id => nameOf(people, id));
 }
+
+// Opens the device's native share sheet so the person picks how to send it
+// (Messages, WhatsApp, email, etc.) — falls back to the phone's default
+// texting app, then to clipboard on desktop where neither is available.
+export async function shareText(text, title) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, text });
+      return 'shared';
+    } catch (e) {
+      if (e.name === 'AbortError') return 'cancelled';
+      // fall through to the sms: fallback below
+    }
+  }
+  const isMobile = /iphone|ipad|ipod|android/i.test(navigator.userAgent);
+  if (isMobile) {
+    window.location.href = `sms:?&body=${encodeURIComponent(text)}`;
+    return 'sms-fallback';
+  }
+  if (navigator.clipboard) {
+    await navigator.clipboard.writeText(text);
+    return 'copied';
+  }
+  return 'unsupported';
+}
